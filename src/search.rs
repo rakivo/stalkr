@@ -40,7 +40,7 @@ impl SearchCtx {
         for mat in self.regex.find_iter(haystack) {
             any = true;
 
-            let start = mat.start() + 1;
+            let start = mat.start();
             let end   = mat.end().min(haystack.len());
             let bytes = &haystack[start..end];
 

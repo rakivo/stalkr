@@ -16,6 +16,8 @@ impl fmt::Debug for Loc {
 }
 
 impl Loc {
+    const AVERAGE_LINES_COUNT: usize = 256;
+
     // O(log lines_count)
     #[inline]
     pub fn from_precomputed(
@@ -24,8 +26,10 @@ impl Loc {
         path: String
     ) -> Self {
         let i = match line_starts.binary_search(&match_byte_index) {
-            Ok(i)  => i,
-            Err(i) => i
+            Ok(i) => i,
+            Err(i) if i == 0 => 0,
+            Err(i) if i >= line_starts.len() => line_starts.len() - 1,
+            Err(i) => i - 1,
         };
 
         let row = i + 1;
@@ -37,7 +41,7 @@ impl Loc {
     // O(n)
     #[inline]
     pub fn precompute(h: &[u8]) -> Vec<usize> {
-        let mut v = Vec::with_capacity(256);
+        let mut v = Vec::with_capacity(Self::AVERAGE_LINES_COUNT);
         v.push(0);
         for (i, &b) in h.iter().enumerate() {
             if b == b'\n' { v.push(i + 1); }
