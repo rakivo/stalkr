@@ -59,7 +59,7 @@ impl SearchCtx {
                 continue
             }
 
-            let todo = Todo { title: preview.to_owned(), loc };
+            let todo = Todo::from_preview_and_loc(preview, loc);
 
             tx.send(todo).expect("could not send todo to issue worker");
         }
