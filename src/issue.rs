@@ -73,14 +73,10 @@ pub async fn issue_worker(
                     }
                 }
             }
-        });
-    }
-
-    while let Some(res) = join_set.join_next().await {
-        if let Err(e) = res {
-            eprintln!("[spawned task error: {e}]");
         }
-    }
+    });
+
+    stream.buffer_unordered(max_concurrency).for_each(|_| async {}).await;
 
     reported_count.load(Ordering::SeqCst)
 }
