@@ -4,15 +4,15 @@ use std::sync::Arc;
 use std::error::Error;
 use std::sync::atomic::{Ordering, AtomicUsize};
 
-use tokio::task::JoinSet;
-use tokio::sync::Semaphore;
+use futures::StreamExt;
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, AUTHORIZATION};
 
 pub const MAX_CONCURRENCY: usize = 4;
 
 pub async fn issue_worker(
-    mut rx: UnboundedReceiver<Todo>,
+    rx: UnboundedReceiver<Todo>,
     token: String,
     max_concurrency: usize,
 ) -> usize {
@@ -38,41 +38,26 @@ pub async fn issue_worker(
         .build()
         .unwrap();
 
-    // semaphore to cap concurrent GitHub requests (to avoid ratelimit storms)
-    let sem = Arc::new(Semaphore::new(max_concurrency));
-
     let reported_count = Arc::new(AtomicUsize::new(0));
 
-    let mut join_set = JoinSet::new();
-
-    while let Some(todo) = rx.recv().await {
+    let stream = UnboundedReceiverStream::new(rx).map(|todo| {
         let url = url.clone();
-        let sem = sem.clone();
         let client = rq_client.clone();
         let reported_count = reported_count.clone();
 
-        join_set.spawn(async move {
-            let _p = sem.acquire().await.unwrap();
-
+        async move {
             let body = serde_json::json!({
                 "title": todo.title,
-                "body": format!{
-                    "TODO at `{loc}`",
-                    loc = todo.loc
-                }
+                "body": format!("TODO at `{}`", todo.loc),
             });
 
-            let resp = client.post(&*url)
-                .json(&body)
-                .send()
-                .await;
+            let resp = client.post(&*url).json(&body).send().await;
 
             match resp {
                 Ok(r) if r.status().is_success() => {
                     reported_count.fetch_add(1, Ordering::SeqCst);
                 }
                 Ok(r) => {
-                    eprintln!();
                     eprintln!(
                         "[failed to create issue ({s}): {t:?}]",
                         s = r.status(),
