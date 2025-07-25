@@ -1,0 +1,20 @@
+[package]
+name = "stalkr"
+version = "0.1.0"
+edition = "2024"
+authors = ["Mark Tyrkba <marktyrkba456@gmail.com>"]
+
+[dependencies]
+anyhow         = { version = "=1.0.98",  default-features = false }
+crossbeam      = { version = "=0.8.4",   default-features = false }
+dir_rec        = { version = "=0.1.2",   default-features = false }
+futures        = { version = "=0.3.31",  default-features = false }
+libc           = { version = "=0.2.174", default-features = false }
+memmap2        = { version = "=0.9.7",   default-features = false }
+rayon          = { version = "=1.10.0",  default-features = false }
+serde_json     = { version = "=1.0.141", default-features = false }
+tokio-stream   = { version = "=0.1.17",  default-features = false }
+reqwest        = { version = "=0.12.22", default-features = false, features = ["json"] }
+phf            = { version = "=0.12.1",  default-features = false, features = ["macros"] }
+regex-automata = { version = "=0.4.9",   default-features = false, features = ["default"] }
+tokio          = { version = "=1.46.1",  default-features = false, features = ["macros", "rt-multi-thread"] }
