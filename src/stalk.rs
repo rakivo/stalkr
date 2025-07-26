@@ -35,16 +35,16 @@ pub fn stalk(
 
     let file_id = fm.register_file(path_str, stalkr_file);
 
-    let search = |path: &str, haystack: &[u8]| {
-        search_ctx.search(haystack, path, found_count, tx, file_id)
+    let search = |haystack: &[u8]| {
+        search_ctx.search(haystack, found_count, tx, fm, file_id)
     };
 
     if file_size < MMAP_THRESHOLD {
         let buf = fm.read_file_to_end(file_id)?;
-        search(path_str, &buf)?;
+        search(&buf)?;
     } else {
         let mmap = fm.mmap_file(file_id)?;
-        search(path_str, &mmap[..])?;
+        search(&mmap[..])?;
     }
 
     Ok(())

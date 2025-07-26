@@ -7,15 +7,18 @@ use rustc_hash::FxBuildHasher;
 use memmap2::{Mmap, MmapOptions};
 use dashmap::mapref::one::{MappedRef, Ref, RefMut};
 
-pub type FileId = u32;
-
 pub type FxDashMap<K, V> = DashMap<K, V, FxBuildHasher>;
 
 type FileRef<'a>    = Ref<'a, FileId, StalkrFile>;
 type FileRefMut<'a> = RefMut<'a, FileId, StalkrFile>;
 
+pub type FilePathGuard<'a> = MappedRef<'a, FileId, StalkrFile, String>;
+
 type BufGuard<'a>  = MappedRef<'a, FileId, StalkrFile, Vec<u8>>;
 type MmapGuard<'a> = MappedRef<'a, FileId, StalkrFile, Mmap>;
+
+#[derive(Eq, Hash, Copy, Clone, Debug, PartialEq)]
+pub struct FileId(u32);
 
 #[derive(Debug)]
 pub enum StalkrFileContents {
@@ -78,7 +81,6 @@ pub struct FileManager {
 }
 
 impl FileManager {
-    #[allow(unused)]
     #[inline(always)]
     pub fn get_file_unchecked(&self, file_id: FileId) -> FileRef<'_> {
         self.files.get(&file_id).unwrap()
@@ -87,6 +89,11 @@ impl FileManager {
     #[inline(always)]
     fn get_file_unchecked_mut(&self, file_id: FileId) -> FileRefMut<'_> {
         self.files.get_mut(&file_id).unwrap()
+    }
+
+    #[inline(always)]
+    pub fn get_file_path_unchecked(&self, file_id: FileId) -> FilePathGuard<'_> {
+        self.get_file_unchecked(file_id).map(|f| &f.upath)
     }
 
     pub fn read_file_to_end(&self, file_id: FileId) -> io::Result<BufGuard<'_>> {
@@ -162,7 +169,7 @@ impl FileManager {
     #[inline(always)]
     fn new_file_id(&self, canonicalized: String) -> FileId {
         static CURR_MODULE_ID: AtomicU32 = AtomicU32::new(0);
-        let file_id = CURR_MODULE_ID.fetch_add(1, Ordering::SeqCst);
+        let file_id = FileId(CURR_MODULE_ID.fetch_add(1, Ordering::SeqCst));
         self.file_id_map.insert(canonicalized, file_id);
         file_id
     }

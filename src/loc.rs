@@ -1,19 +1,9 @@
+use crate::fm::{self, FileId, FileManager};
+
 use std::fmt;
 
-pub struct Loc(pub String, pub usize, pub usize);
-
-impl fmt::Display for Loc {
-    fn fmt(&self, fm: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self(f, r, c) = self;
-        write!(fm, "{f}:{r}:{c}")
-    }
-}
-
-impl fmt::Debug for Loc {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self, f)
-    }
-}
+#[derive(Debug)]
+pub struct Loc(pub FileId, pub u32, pub u32);
 
 impl Loc {
     const AVERAGE_LINES_COUNT: usize = 256;
@@ -23,7 +13,7 @@ impl Loc {
     pub fn from_precomputed(
         line_starts: &[usize],
         match_byte_index: usize,
-        path: String
+        file_id: FileId
     ) -> Self {
         let i = match line_starts.binary_search(&match_byte_index) {
             Ok(i) => i,
@@ -35,7 +25,7 @@ impl Loc {
         let row = i + 1;
         let col = match_byte_index - line_starts[i] + 1;
 
-        Self(path, row, col)
+        Self(file_id, row as _, col as _)
     }
 
     // O(n)
@@ -46,6 +36,24 @@ impl Loc {
         for (i, &b) in h.iter().enumerate() {
             if b == b'\n' { v.push(i + 1); }
         } v
+    }
+
+    #[inline(always)]
+    pub fn display<'a>(&self, fm: &'a FileManager) -> DisplayLoc<'a> {
+        let file_path = fm.get_file_path_unchecked(self.0);
+        DisplayLoc { file_path, row: self.1, col: self.2 }
+    }
+}
+
+pub struct DisplayLoc<'a> {
+    file_path: fm::FilePathGuard<'a>,
+    row: u32, col: u32
+}
+
+impl fmt::Display for DisplayLoc<'_> {
+    fn fmt(&self, fm: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { file_path, row, col } = self;
+        write!(fm, "{file_path}:{row}:{col}")
     }
 }
 

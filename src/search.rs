@@ -1,7 +1,7 @@
 use crate::util;
 use crate::loc::Loc;
-use crate::fm::FileId;
 use crate::todo::Todo;
+use crate::fm::{FileId, FileManager};
 
 use std::path::PathBuf;
 use std::fmt::Write as FmtWrite;
@@ -31,9 +31,9 @@ impl SearchCtx {
     pub fn search(
         &self,
         haystack: &[u8],
-        path: &str,
         found_count: &AtomicUsize,
         tx: &UnboundedSender<Todo>,
+        fm: &FileManager,
         file_id: FileId
     ) -> anyhow::Result<bool> {
         let line_starts = Loc::precompute(haystack);
@@ -48,13 +48,9 @@ impl SearchCtx {
             let end   = mat.end().min(haystack.len());
             let bytes = &haystack[start..end];
 
-            let preview = str::from_utf8(bytes).unwrap_or("<invalid UTF-8>");
+            let loc = Loc::from_precomputed(&line_starts, start, file_id);
 
-            let loc = Loc::from_precomputed(
-                &line_starts,
-                start,
-                path.to_owned()
-            );
+            let preview = str::from_utf8(bytes).unwrap_or("<invalid UTF-8>");
 
             let title = Todo::extract_todo_title(preview);
 
@@ -62,7 +58,7 @@ impl SearchCtx {
                 std::str::from_utf8_unchecked(&haystack[end + 1..])
             });
 
-            writeln!(stdout_buf, "found TODO at {loc}: {preview}")?;
+            writeln!(stdout_buf, "found TODO at {l}: {preview}", l = loc.display(fm))?;
             writeln!(stdout_buf, "  title: \"{title}\"")?;
             if let Some(desc) = &desc {
                 writeln!(stdout_buf, "  description:\n{d}", d = desc.display(4))?;
