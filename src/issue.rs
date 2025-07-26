@@ -9,8 +9,6 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, AUTHORIZATION};
 
-pub const MAX_CONCURRENCY: usize = 4;
-
 pub async fn issue(
     rx: UnboundedReceiver<Todo>,
     token: String,

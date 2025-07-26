@@ -1,5 +1,5 @@
-use std::env;
 use std::sync::Arc;
+use std::{env, thread};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 mod fm;
@@ -23,6 +23,15 @@ async fn main() {
         "STALKR_GITHUB_TOKEN"
     ).expect("STALKR_GITHUB_TOKEN env var missing");
 
+    let cpu_count = thread::available_parallelism().unwrap().get();
+
+    let (rayon_threads, max_http_concurrency) = util::balance_concurrency(cpu_count);
+
+    let rayon_pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(rayon_threads)
+        .build()
+        .unwrap();
+
     let (tx, rx) = unbounded_channel();
 
     let fm = FileManager::default();
@@ -33,7 +42,7 @@ async fn main() {
         let tx = tx.clone();
         let found_count = found_count.clone();
         let search_ctx = SearchCtx::new(todo::TODO_REGEXP);
-        move || {
+        move || rayon_pool.install(move || {
             DirRec::new(".")
                 .filter_map(|e| search_ctx.filter(e))
                 .par_bridge()
@@ -46,13 +55,13 @@ async fn main() {
                         &fm
                     );
                 });
-        }
+        })
     });
 
     let issue_handle = tokio::spawn(issue::issue(
         rx,
         token,
-        issue::MAX_CONCURRENCY
+        max_http_concurrency
     ));
 
     _ = scan_handle.await;
