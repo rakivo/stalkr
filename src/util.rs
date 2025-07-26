@@ -38,6 +38,7 @@ pub fn is_line_a_comment(h_: &str) -> Option<usize> {
     Some(h_.len() - h.len() + comment_offset)
 }
 
+#[allow(unused)]
 pub fn extract_text_from_a_comment(h: &str) -> Option<&str> {
     let comment_end = is_line_a_comment(h)?;
     Some(h[comment_end..].trim())

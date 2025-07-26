@@ -58,11 +58,11 @@ pub async fn issue(
                     reported_count.fetch_add(1, Ordering::SeqCst);
                 }
                 Ok(r) => {
-                    eprintln!(
+                    eprintln!{
                         "[failed to create issue ({s}): {t:?}]",
                         s = r.status(),
                         t = r.text().await
-                    );
+                    };
                 }
                 Err(e) => {
                     eprintln!("[network error creating issue: {e}]");

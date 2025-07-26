@@ -2,6 +2,7 @@ use std::env;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+mod fm;
 mod loc;
 mod todo;
 mod util;
@@ -9,6 +10,7 @@ mod issue;
 mod stalk;
 mod search;
 
+use fm::FileManager;
 use search::SearchCtx;
 
 use dir_rec::DirRec;
@@ -23,19 +25,26 @@ async fn main() {
 
     let (tx, rx) = unbounded_channel();
 
+    let fm = FileManager::default();
+
     let found_count = Arc::new(AtomicUsize::new(0));
 
     let scan_handle = tokio::task::spawn_blocking({
         let tx = tx.clone();
         let found_count = found_count.clone();
-        let search_ctx = SearchCtx::new(todo::TODO_REGEXP).unwrap();
+        let search_ctx = SearchCtx::new(todo::TODO_REGEXP);
         move || {
             DirRec::new(".")
-                .into_iter()
                 .filter_map(|e| search_ctx.filter(e))
                 .par_bridge()
                 .for_each(|e| {
-                    _ = stalk::stalk(e, &search_ctx, &found_count, &tx);
+                    _ = stalk::stalk(
+                        e,
+                        &search_ctx,
+                        &found_count,
+                        &tx,
+                        &fm
+                    );
                 });
         }
     });

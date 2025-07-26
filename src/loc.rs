@@ -27,7 +27,7 @@ impl Loc {
     ) -> Self {
         let i = match line_starts.binary_search(&match_byte_index) {
             Ok(i) => i,
-            Err(i) if i == 0 => 0,
+            Err(0) => 0,
             Err(i) if i >= line_starts.len() => line_starts.len() - 1,
             Err(i) => i - 1,
         };

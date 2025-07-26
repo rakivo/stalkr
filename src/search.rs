@@ -1,15 +1,13 @@
 use crate::util;
 use crate::loc::Loc;
+use crate::fm::FileId;
 use crate::todo::Todo;
 
 use std::path::PathBuf;
 use std::sync::atomic::{Ordering, AtomicUsize};
 
+use regex_automata::dfa::regex::Regex;
 use tokio::sync::mpsc::UnboundedSender;
-use regex_automata::dfa::{
-    regex::Regex,
-    dense::BuildError
-};
 
 pub struct SearchCtx {
     regex: Regex
@@ -17,13 +15,14 @@ pub struct SearchCtx {
 
 impl SearchCtx {
     #[inline]
-    pub fn new(pattern_str: &str) -> Result<Self, BuildError> {
+    pub fn new(pattern_str: &str) -> Self {
         let regex = Regex::builder()
             .syntax(Default::default())
             .thompson(Default::default())
-            .build(pattern_str)?;
+            .build(pattern_str)
+            .expect("could not init regex engine");
 
-        Ok(SearchCtx { regex })
+        SearchCtx { regex }
     }
 
     #[inline]
@@ -32,7 +31,8 @@ impl SearchCtx {
         haystack: &[u8],
         path: &str,
         found_count: &AtomicUsize,
-        tx: &UnboundedSender<Todo>
+        tx: &UnboundedSender<Todo>,
+        file_id: FileId
     ) -> bool {
         let line_starts = Loc::precompute(haystack);
 
@@ -44,7 +44,7 @@ impl SearchCtx {
             let end   = mat.end().min(haystack.len());
             let bytes = &haystack[start..end];
 
-            let preview = str::from_utf8(bytes).unwrap_or_else(|_| "<invalid UTF-8>");
+            let preview = str::from_utf8(bytes).unwrap_or("<invalid UTF-8>");
 
             let loc = Loc::from_precomputed(
                 &line_starts,
@@ -71,7 +71,8 @@ impl SearchCtx {
             }
 
             let todo = Todo {
-                loc,
+                src_loc: loc,
+                src_file_id: file_id,
                 description: desc,
                 title: title.to_owned(),
             };
