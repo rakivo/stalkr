@@ -40,7 +40,7 @@ pub async fn issue(
 
     let reported_count = Arc::new(AtomicUsize::new(0));
 
-    let stream = UnboundedReceiverStream::new(rx).map(|todo| {
+    UnboundedReceiverStream::new(rx).for_each_concurrent(max_concurrency, |todo| {
         let url = url.clone();
         let client = rq_client.clone();
         let reported_count = reported_count.clone();
@@ -74,9 +74,7 @@ pub async fn issue(
                 }
             }
         }
-    });
-
-    stream.buffer_unordered(max_concurrency).for_each(|_| async {}).await;
+    }).await;
 
     reported_count.load(Ordering::SeqCst)
 }
