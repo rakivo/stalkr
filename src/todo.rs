@@ -1,3 +1,4 @@
+use crate::util;
 use crate::loc::Loc;
 
 use std::fmt;
@@ -46,13 +47,7 @@ pub struct Todo {
 impl Todo {
     #[inline]
     pub fn extract_todo_title(h: &str) -> &str {
-        h
-            .trim_start()
-            .trim_start_matches("//")
-            .trim_start_matches('#')
-            .trim_start_matches("/*")
-            .trim_end_matches("*/")
-            .trim_start()
+        util::trim_comment_start(h)
             .strip_prefix("TODO:")
             .unwrap_or(h)
             .trim()
@@ -63,27 +58,16 @@ impl Todo {
         let mut lines = Vec::new();
 
         for line in h.lines() {
-            let line = line.trim_start();
+            if util::is_line_a_comment(line).is_none() { break }
 
-            // Only consider comment lines
-            let stripped = if let Some(s) = line.strip_prefix("//") {
-                s.trim_start()
-            } else if let Some(s) = line.strip_prefix("#") {
-                s.trim_start()
-            } else if let Some(s) = line.strip_prefix("/*") {
-                s.trim_start()
-            } else {
-                break; // non-comment line, stop collecting
-            };
+            let line = util::trim_comment_start(line);
 
-            // Stop if the comment contains another TODO
-            if stripped.to_uppercase().starts_with("TODO:") {
-                break;
-            }
+            if line.is_empty() { continue }
 
-            // If line is not empty after stripping comment, collect
-            if !stripped.is_empty() {
-                lines.push(stripped.to_owned())
+            if line.starts_with("TODO:") { break }
+
+            if !line.is_empty() {
+                lines.push(line.to_owned())
             }
         }
 
