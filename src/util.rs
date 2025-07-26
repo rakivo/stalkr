@@ -7,7 +7,7 @@ pub fn ask_yn(prompt: &str) -> bool {
     let mut input = String::new();
     io::stdin().read_line(&mut input).unwrap();
 
-    let input = input.trim_start();
+    let input = input.trim();
 
     input.eq_ignore_ascii_case("y") || input.eq_ignore_ascii_case("yes")
 }
