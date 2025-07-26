@@ -11,7 +11,7 @@ use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, AUTHORIZATION};
 
 pub const MAX_CONCURRENCY: usize = 4;
 
-pub async fn issue_worker(
+pub async fn issue(
     rx: UnboundedReceiver<Todo>,
     token: String,
     max_concurrency: usize,
@@ -48,7 +48,7 @@ pub async fn issue_worker(
         async move {
             let body = serde_json::json!({
                 "title": todo.title,
-                "body": format!("TODO at `{}`", todo.loc),
+                "body": todo.description.map(|ls| ls.lines.join("\n"))
             });
 
             let resp = client.post(&*url).json(&body).send().await;

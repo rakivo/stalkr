@@ -44,22 +44,37 @@ impl SearchCtx {
             let end   = mat.end().min(haystack.len());
             let bytes = &haystack[start..end];
 
-            let preview = match str::from_utf8(bytes) {
-                Ok(s)  => s,
-                Err(_) => "<invalid UTF-8>"
-            };
+            let preview = str::from_utf8(bytes).unwrap_or_else(|_| "<invalid UTF-8>");
 
-            let loc = Loc::from_precomputed(&line_starts, start, path.to_owned());
+            let loc = Loc::from_precomputed(
+                &line_starts,
+                start,
+                path.to_owned()
+            );
+
+            let title = Todo::extract_todo_title(preview);
+
+            let desc = Todo::extract_todo_description(unsafe {
+                std::str::from_utf8_unchecked(&haystack[end + 1..])
+            });
 
             println!("found TODO at {loc}: {preview}");
+            println!("  title: \"{title}\"");
+            if let Some(desc) = &desc {
+                println!("  description:\n{}", desc.display(4));
+            }
 
             found_count.fetch_add(1, Ordering::SeqCst);
 
-            if !util::ask_yn("report it?") {
+            if !util::ask_yn("\nreport it?") {
                 continue
             }
 
-            let todo = Todo::from_preview_and_loc(preview, loc);
+            let todo = Todo {
+                loc,
+                description: desc,
+                title: title.to_owned(),
+            };
 
             tx.send(todo).expect("could not send todo to issue worker");
         }

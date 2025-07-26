@@ -40,7 +40,7 @@ async fn main() {
         }
     });
 
-    let issue_handle = tokio::spawn(issue::issue_worker(
+    let issue_handle = tokio::spawn(issue::issue(
         rx,
         token,
         issue::MAX_CONCURRENCY
