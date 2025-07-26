@@ -4,6 +4,8 @@ use crate::fm::FileId;
 use crate::todo::Todo;
 
 use std::path::PathBuf;
+use std::fmt::Write as FmtWrite;
+use std::io::{self, Write as IoWrite};
 use std::sync::atomic::{Ordering, AtomicUsize};
 
 use regex_automata::dfa::regex::Regex;
@@ -33,8 +35,10 @@ impl SearchCtx {
         found_count: &AtomicUsize,
         tx: &UnboundedSender<Todo>,
         file_id: FileId
-    ) -> bool {
+    ) -> anyhow::Result<bool> {
         let line_starts = Loc::precompute(haystack);
+
+        let mut stdout_buf = String::new();
 
         let mut any = false;
         for mat in self.regex.find_iter(haystack) {
@@ -58,10 +62,18 @@ impl SearchCtx {
                 std::str::from_utf8_unchecked(&haystack[end + 1..])
             });
 
-            println!("found TODO at {loc}: {preview}");
-            println!("  title: \"{title}\"");
+            writeln!(stdout_buf, "found TODO at {loc}: {preview}")?;
+            writeln!(stdout_buf, "  title: \"{title}\"")?;
             if let Some(desc) = &desc {
-                println!("  description:\n{}", desc.display(4));
+                writeln!(stdout_buf, "  description:\n{d}", d = desc.display(4))?;
+            }
+
+            // flush buffered message to stdout under lock
+            {
+                let stdout = io::stdout();
+                let mut out = stdout.lock();
+                write!(out, "{stdout_buf}")?;
+                stdout_buf.clear();
             }
 
             found_count.fetch_add(1, Ordering::SeqCst);
@@ -80,7 +92,7 @@ impl SearchCtx {
             tx.send(todo).expect("could not send todo to issue worker");
         }
 
-        any
+        Ok(any)
     }
 
     #[inline]

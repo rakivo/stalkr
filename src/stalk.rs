@@ -41,10 +41,10 @@ pub fn stalk(
 
     if file_size < MMAP_THRESHOLD {
         let buf = fm.read_file_to_end(file_id)?;
-        search(path_str, &buf);
+        search(path_str, &buf)?;
     } else {
         let mmap = fm.mmap_file(file_id)?;
-        search(path_str, &mmap[..]);
+        search(path_str, &mmap[..])?;
     }
 
     Ok(())
