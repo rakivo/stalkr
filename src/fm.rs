@@ -38,27 +38,34 @@ impl StalkrFileContents {
 }
 
 #[derive(Debug)]
+pub enum StalkrFileState {
+    Read(StalkrFileContents),
+    NotRead(File)
+}
+
+#[derive(Debug)]
 pub struct StalkrFile {
     // user path (not canonicalized)
     #[allow(unused)]
     upath: String,
 
-    handle: File,
-
     meta: fs::Metadata,
 
-    contents: Option<StalkrFileContents>,
+    state: StalkrFileState
 }
 
 impl StalkrFile {
     #[inline(always)]
     pub fn new(upath: String, handle: File, meta: fs::Metadata) -> Self {
-        Self { upath, handle, meta, contents: None }
+        Self { meta, upath, state: StalkrFileState::NotRead(handle) }
     }
 
     #[inline(always)]
     pub fn contents_unchecked(&self) -> &StalkrFileContents {
-        unsafe { self.contents.as_ref().unwrap_unchecked() }
+        match &self.state {
+            StalkrFileState::Read(contents) => contents,
+            _ => unreachable!()
+        }
     }
 }
 
@@ -83,25 +90,30 @@ impl FileManager {
     }
 
     pub fn read_file_to_end(&self, file_id: FileId) -> io::Result<BufGuard<'_>> {
+        let mut entry = self.get_file_unchecked_mut(file_id);
+
+        let file_size = entry.meta.len() as usize;
+
         #[inline]
         fn get_buf(e: FileRefMut<'_>) -> BufGuard<'_> {
             e.downgrade().map(|f| f.contents_unchecked().as_buf_unchecked())
         }
 
-        let mut entry = self.get_file_unchecked_mut(file_id);
+        match &mut entry.state {
+            StalkrFileState::Read(StalkrFileContents::Buf(_)) => {
+                return Ok(get_buf(entry))
+            }
 
-        if let Some(StalkrFileContents::Buf(_)) = &entry.contents {
-            return Ok(get_buf(entry))
+            StalkrFileState::NotRead(file) => {
+                let mut buf = Vec::with_capacity(file_size);
+                file.read_to_end(&mut buf)?;
+                entry.state = StalkrFileState::Read(
+                    StalkrFileContents::Buf(buf)
+                )
+            }
+
+            StalkrFileState::Read(_) => {}
         }
-
-        let file_size = entry.meta.len() as usize;
-
-        let mut buf = Vec::with_capacity(file_size);
-
-        // it's ok to mutate entry.handle's cursor because we only mutate it once
-        _ = entry.handle.read_to_end(&mut buf)?;
-
-        entry.contents = Some(StalkrFileContents::Buf(buf));
 
         Ok(get_buf(entry))
     }
@@ -109,20 +121,20 @@ impl FileManager {
     pub fn mmap_file(&self, file_id: FileId) -> io::Result<MmapGuard<'_>> {
         let mut entry = self.get_file_unchecked_mut(file_id);
 
-        if entry.contents.is_none() {
-            let mut opts = MmapOptions::new();
-
-            let file_size = entry.meta.len() as usize;
-            opts.len(file_size);
-
-            let mmap = unsafe { opts.map(&entry.handle) }?;
-
-            entry.contents = Some(StalkrFileContents::Mmap(mmap))
+        if let StalkrFileState::Read(StalkrFileContents::Mmap(_)) = &entry.state {
+            return Ok(entry.downgrade().map(|f| f.contents_unchecked().as_mmap_unchecked()));
         }
 
-        let mmap = entry.downgrade().map(|f| f.contents_unchecked().as_mmap_unchecked());
+        if let StalkrFileState::NotRead(file) = &entry.state {
+            let mut opts = MmapOptions::new();
+            opts.len(entry.meta.len() as usize);
 
-        Ok(mmap)
+            let mmap = unsafe { opts.map(file)? };
+
+            entry.state = StalkrFileState::Read(StalkrFileContents::Mmap(mmap));
+        }
+
+        Ok(entry.downgrade().map(|f| f.contents_unchecked().as_mmap_unchecked()))
     }
 
     #[inline]
@@ -142,7 +154,6 @@ impl FileManager {
         }
 
         let file_id = self.new_file_id(s);
-
         self.files.insert(file_id, file);
 
         file_id
@@ -151,11 +162,8 @@ impl FileManager {
     #[inline(always)]
     fn new_file_id(&self, canonicalized: String) -> FileId {
         static CURR_MODULE_ID: AtomicU32 = AtomicU32::new(0);
-
         let file_id = CURR_MODULE_ID.fetch_add(1, Ordering::SeqCst);
-
         self.file_id_map.insert(canonicalized, file_id);
-
         file_id
     }
 }
