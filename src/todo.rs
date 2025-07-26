@@ -60,7 +60,7 @@ impl Todo {
 
     #[inline]
     pub fn extract_todo_description(h: &str) -> Option<Description> {
-        let mut lines = Vec::new();
+        let mut lines = Vec::with_capacity(4);
 
         for line in h.lines() {
             if util::is_line_a_comment(line).is_none() { break }
@@ -71,9 +71,7 @@ impl Todo {
 
             if line.starts_with("TODO:") { break }
 
-            if !line.is_empty() {
-                lines.push(line.to_owned())
-            }
+            lines.push(line.to_owned())
         }
 
         if lines.is_empty() {
