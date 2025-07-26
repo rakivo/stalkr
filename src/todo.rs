@@ -54,6 +54,7 @@ impl Todo {
         util::trim_comment_start(h)
             .strip_prefix("TODO:")
             .unwrap_or(h)
+            .trim_end_matches("*/")
             .trim()
     }
 
