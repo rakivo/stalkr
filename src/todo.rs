@@ -33,7 +33,7 @@ impl fmt::Display for DisplayDescription<'_> {
         let tab = " ".repeat(self.line_start_offset);
 
         for l in &self.desc.lines {
-            write!(f, "{tab}{l}")?
+            writeln!(f, "{tab}{l}")?
         }
 
         Ok(())
