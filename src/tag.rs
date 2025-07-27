@@ -1,6 +1,10 @@
 use crate::fm::{FileId, FileManager};
 
+use std::sync::Arc;
 use std::{io, mem, fmt};
+
+use tokio::sync::Semaphore;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 #[derive(Debug)]
 pub struct Tag {
@@ -16,7 +20,30 @@ impl fmt::Display for Tag {
     }
 }
 
-pub fn insert_tags(file_id: FileId, fm: &FileManager) -> io::Result<()> {
+pub async fn poll_ready_files(
+    mut tag_rx: UnboundedReceiver<FileId>,
+    fm: Arc<FileManager>,
+    inserter_count: usize,
+) {
+    let sem = Arc::new(Semaphore::new(inserter_count));
+
+    while let Some(file_id) = tag_rx.recv().await {
+        let permit = sem.clone().acquire_owned().await.unwrap();
+        let fm_clone = fm.clone();
+
+        tokio::task::spawn_blocking(move || {
+            if let Err(err) = insert_tags(file_id, &fm_clone) {
+                eprintln!{
+                    "[tag] failed to insert tags for file {file_id:?}: {err:#}"
+                }
+            }
+
+            drop(permit);
+        });
+    }
+}
+
+fn insert_tags(file_id: FileId, fm: &FileManager) -> io::Result<()> {
     let mut insertions = mem::take(
         &mut fm.get_file_unchecked_mut(file_id).tags
     );

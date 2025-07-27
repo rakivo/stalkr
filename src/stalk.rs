@@ -1,6 +1,6 @@
-use crate::todo::Todo;
-use crate::fm::{FileManager, StalkrFile};
+use crate::todo::Todos;
 use crate::search::SearchCtx;
+use crate::fm::{FileManager, StalkrFile};
 
 use std::path::PathBuf;
 use std::fs::OpenOptions;
@@ -16,7 +16,7 @@ pub fn stalk(
     file_path: PathBuf,
     search_ctx: &SearchCtx,
     found_count: &AtomicUsize,
-    tx: &UnboundedSender<Todo>,
+    tx: &UnboundedSender<Todos>,
     fm: &FileManager
 ) -> anyhow::Result<()> {
     let file = OpenOptions::new()

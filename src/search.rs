@@ -1,6 +1,6 @@
 use crate::util;
 use crate::loc::Loc;
-use crate::todo::Todo;
+use crate::todo::{Todo, Todos};
 use crate::fm::{FileId, FileManager};
 
 use std::path::PathBuf;
@@ -32,7 +32,7 @@ impl SearchCtx {
         &self,
         haystack: &[u8],
         found_count: &AtomicUsize,
-        tx: &UnboundedSender<Todo>,
+        tx: &UnboundedSender<Todos>,
         fm: &FileManager,
         file_id: FileId
     ) -> anyhow::Result<bool> {
@@ -40,9 +40,8 @@ impl SearchCtx {
 
         let mut stdout_buf = String::new();
 
-        let mut any = false;
-        for mat in self.regex.find_iter(haystack) {
-            any = true;
+        let todos = self.regex.find_iter(haystack).filter_map(|mat| {
+            found_count.fetch_add(1, Ordering::SeqCst);
 
             let start = mat.start();
             let end   = mat.end().min(haystack.len());
@@ -58,25 +57,21 @@ impl SearchCtx {
                 std::str::from_utf8_unchecked(&haystack[end + 1..])
             });
 
-            writeln!(stdout_buf, "found TODO at {l}: {preview}", l = loc.display(fm))?;
-            writeln!(stdout_buf, "  title: \"{title}\"")?;
+            writeln!(stdout_buf, "found TODO at {l}: {preview}", l = loc.display(fm)).ok()?;
+            writeln!(stdout_buf, "  title: \"{title}\"").ok()?;
             if let Some(desc) = &desc {
-                writeln!(stdout_buf, "  description:\n{d}", d = desc.display(4))?;
+                writeln!(stdout_buf, "  description:\n{d}", d = desc.display(4)).ok()?;
             }
 
             // flush buffered message to stdout under lock
-            {
-                let stdout = io::stdout();
-                let mut out = stdout.lock();
-                write!(out, "{stdout_buf}")?;
+            let should_report = {
+                let mut g = io::stdout().lock();
+                writeln!(g, "{stdout_buf}").ok()?;
                 stdout_buf.clear();
-            }
+                util::ask_yn("report it?")
+            };
 
-            found_count.fetch_add(1, Ordering::SeqCst);
-
-            if !util::ask_yn("\nreport it?") {
-                continue
-            }
+            if !should_report { return None }
 
             let todo_byte_offset = start +
                 preview.len() -
@@ -91,10 +86,18 @@ impl SearchCtx {
                 title: title.to_owned(),
             };
 
-            tx.send(todo).expect("could not send todo to issue worker");
+            Some(todo)
+        }).collect::<Vec<_>>();
+
+        if todos.is_empty() {
+            return Ok(false)
         }
 
-        Ok(any)
+        let todos = util::vec_into_boxed_slice_norealloc(todos);
+
+        tx.send(todos).expect("could not send todos to issue worker");
+
+        Ok(true)
     }
 
     #[inline]

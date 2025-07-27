@@ -4,6 +4,8 @@ use crate::fm::FileId;
 
 use std::fmt;
 
+pub type Todos = Box<[Todo]>;
+
 pub const TODO_REGEXP: &str = r"(?m)^\s*(?://|#|/\*)\s*TODO:\s*(.+)$";
 
 #[derive(Debug)]

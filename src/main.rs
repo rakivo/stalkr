@@ -24,23 +24,23 @@ async fn main() {
         "STALKR_GITHUB_TOKEN"
     ).expect("STALKR_GITHUB_TOKEN env var missing");
 
-    let cpu_count = thread::available_parallelism().unwrap().get();
+    let num_cpus = thread::available_parallelism().unwrap().get();
 
-    let (rayon_threads, max_http_concurrency) = util::balance_concurrency(cpu_count);
+    let (rayon_threads, max_http_concurrency) = util::balance_concurrency(num_cpus);
 
     let rayon_pool = rayon::ThreadPoolBuilder::new()
         .num_threads(rayon_threads)
         .build()
         .unwrap();
 
-    let (tx, rx) = unbounded_channel();
+    let (issue_tx, issue_rx) = unbounded_channel();
 
     let fm = Arc::new(FileManager::default());
 
-    let found_count = Arc::new(AtomicUsize::new(0));
+    let found_count = Arc::new(AtomicUsize::new(1));
 
     let scan_handle = tokio::task::spawn_blocking({
-        let tx = tx.clone();
+        let tx = issue_tx.clone();
         let fm = fm.clone();
         let found_count = found_count.clone();
         let search_ctx = SearchCtx::new(todo::TODO_REGEXP);
@@ -60,26 +60,37 @@ async fn main() {
         })
     });
 
-    let issue_handle = tokio::spawn(issue::issue(
-        rx,
-        token,
-        max_http_concurrency,
-        fm.clone()
-    ));
+    let (tag_tx, tag_rx) = unbounded_channel();
+
+    let issue_handle = tokio::spawn({
+        issue::issue(
+            issue_rx,
+            tag_tx,
+            token,
+            max_http_concurrency,
+            fm.clone(),
+        )
+    });
+
+    let num_inserters = num_cpus.min(4);
+
+    let inserter_task = tokio::spawn(
+        tag::poll_ready_files(
+            tag_rx,
+            fm.clone(),
+            num_inserters,
+        )
+    );
 
     _ = scan_handle.await;
 
-    drop(tx);
-
-    let found_count = found_count.load(Ordering::SeqCst);
+    drop(issue_tx);
 
     let reported_count = issue_handle.await.unwrap();
 
-    let file_ids = fm.files.iter().map(|e| *e.key()).collect::<Vec<_>>();
+    inserter_task.await.unwrap();
 
-    for id in file_ids {
-        tag::insert_tags(id, &fm).unwrap();
-    }
+    let found_count = found_count.load(Ordering::SeqCst);
 
     if found_count == 0 {
         println!("[no todo's found]")

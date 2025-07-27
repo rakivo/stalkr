@@ -1,3 +1,4 @@
+use std::{mem, slice};
 use std::io::{self, Write};
 
 pub fn ask_yn(prompt: &str) -> bool {
@@ -42,6 +43,18 @@ pub fn is_line_a_comment(h_: &str) -> Option<usize> {
 pub fn extract_text_from_a_comment(h: &str) -> Option<&str> {
     let comment_end = is_line_a_comment(h)?;
     Some(h[comment_end..].trim())
+}
+
+#[inline]
+pub fn vec_into_boxed_slice_norealloc<T>(mut v: Vec<T>) -> Box<[T]> {
+    let len = v.len();
+    let ptr = v.as_mut_ptr();
+
+    mem::forget(v);
+
+    unsafe {
+        Box::from_raw(slice::from_raw_parts_mut(ptr, len))
+    }
 }
 
 pub fn balance_concurrency(cpu_count: usize) -> (usize, usize) {
