@@ -3,6 +3,7 @@
 //   but neither do I want to use global IO mutex for `ask_yn`.
 //   So, moving it outside of rayon and doing IO in the main thread
 //   seems like the way.
+// TODO(#2): Commit tag-insertion to the origin
 
 use std::sync::Arc;
 use std::{env, thread};
