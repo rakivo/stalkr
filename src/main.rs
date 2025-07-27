@@ -1,3 +1,9 @@
+// TODO(#1): Move IO (ask_yn) outside of rayon `par_bridge`
+//   It doesn't seem to work consistently for some reason,
+//   but neither do I want to use global IO mutex for `ask_yn`.
+//   So, moving it outside of rayon and doing IO in the main thread
+//   seems like the way.
+
 use std::sync::Arc;
 use std::{env, thread};
 use std::sync::atomic::{AtomicUsize, Ordering};
