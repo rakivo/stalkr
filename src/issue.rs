@@ -1,3 +1,4 @@
+use crate::tag::Tag;
 use crate::todo::Todo;
 use crate::fm::FileManager;
 
@@ -68,15 +69,15 @@ pub async fn issue(
                         });
 
                     match issue_number {
-                        Ok(num) => {
-                            println!("created issue with number {num}");
+                        Ok(issue_number) => {
                             reported_count.fetch_add(1, Ordering::SeqCst);
-                            crate::tag::insert_tag_mmap(
-                                todo.src_file_id,
-                                todo.todo_byte_offset,
-                                &format!("(#{num})"),
-                                &fm
-                            ).unwrap();
+
+                            let tag = Tag {
+                                issue_number,
+                                byte_offset: todo.todo_byte_offset as _,
+                            };
+
+                            fm.add_tag_to_file(todo.src_file_id, tag);
                         }
                         Err(e) => eprintln!("[failed to parse JSON response: {e}]")
                     }

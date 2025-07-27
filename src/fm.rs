@@ -1,3 +1,5 @@
+use crate::tag::Tag;
+
 use std::io::{self, Read};
 use std::fs::{self, File};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -57,13 +59,15 @@ pub struct StalkrFile {
 
     pub handle: File,
 
+    pub tags: Vec<Tag>,
+
     contents: Option<StalkrFileContents>
 }
 
 impl StalkrFile {
     #[inline(always)]
     pub fn new(upath: String, handle: File, meta: fs::Metadata) -> Self {
-        Self { meta, upath, handle, contents: None }
+        Self { meta, upath, handle, tags: Vec::new(), contents: None }
     }
 
     #[inline(always)]
@@ -79,7 +83,7 @@ impl StalkrFile {
 
 #[derive(Debug, Default)]
 pub struct FileManager {
-    files: FxDashMap<FileId, StalkrFile>,
+    pub files: FxDashMap<FileId, StalkrFile>,
 
     // canonicalized_file_path -> file_id
     file_id_map: FxDashMap<String, FileId>,
@@ -101,7 +105,12 @@ impl FileManager {
         self.get_file_unchecked(file_id).map(|f| &f.upath)
     }
 
-    #[inline]
+    #[inline(always)]
+    pub fn add_tag_to_file(&self, file_id: FileId, tag: Tag) {
+        self.get_file_unchecked_mut(file_id).tags.push(tag)
+    }
+
+    #[inline(always)]
     pub fn drop_entry(&self, file_id: FileId) {
         self.files.remove(&file_id);
     }

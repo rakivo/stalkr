@@ -64,7 +64,7 @@ async fn main() {
         rx,
         token,
         max_http_concurrency,
-        fm
+        fm.clone()
     ));
 
     _ = scan_handle.await;
@@ -74,6 +74,12 @@ async fn main() {
     let found_count = found_count.load(Ordering::SeqCst);
 
     let reported_count = issue_handle.await.unwrap();
+
+    let file_ids = fm.files.iter().map(|e| *e.key()).collect::<Vec<_>>();
+
+    for id in file_ids {
+        tag::insert_tags(id, &fm).unwrap();
+    }
 
     if found_count == 0 {
         println!("[no todo's found]")
