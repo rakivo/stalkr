@@ -78,8 +78,14 @@ impl SearchCtx {
                 continue
             }
 
+            let todo_byte_offset = start +
+                preview.len() -
+                util::trim_comment_start(preview).len() +
+                "TODO".len();
+
             let todo = Todo {
                 src_loc: loc,
+                todo_byte_offset,
                 src_file_id: file_id,
                 description: desc,
                 title: title.to_owned(),

@@ -2,8 +2,8 @@ use crate::todo::Todo;
 use crate::fm::{FileManager, StalkrFile};
 use crate::search::SearchCtx;
 
-use std::fs::File;
 use std::path::PathBuf;
+use std::fs::OpenOptions;
 use std::sync::atomic::AtomicUsize;
 
 use tokio::sync::mpsc::UnboundedSender;
@@ -19,7 +19,10 @@ pub fn stalk(
     tx: &UnboundedSender<Todo>,
     fm: &FileManager
 ) -> anyhow::Result<()> {
-    let file = File::open(&file_path)?;
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&file_path)?;
 
     let meta = file.metadata()?;
 
@@ -39,12 +42,16 @@ pub fn stalk(
         search_ctx.search(haystack, found_count, tx, fm, file_id)
     };
 
-    if file_size < MMAP_THRESHOLD {
+    let any = if file_size < MMAP_THRESHOLD {
         let buf = fm.read_file_to_end(file_id)?;
-        search(&buf)?;
+        search(&buf)
     } else {
         let mmap = fm.mmap_file(file_id)?;
-        search(&mmap[..])?;
+        search(&mmap[..])
+    }?;
+
+    if !any {
+        fm.drop_entry(file_id);
     }
 
     Ok(())

@@ -43,8 +43,8 @@ pub struct Todo {
     #[allow(unused)]
     pub src_loc: Loc,
     pub title: String,
-    #[allow(unused)]
     pub src_file_id: FileId,
+    pub todo_byte_offset: usize,
     pub description: Option<Description>
 }
 

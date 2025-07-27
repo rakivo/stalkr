@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 mod fm;
 mod loc;
+mod tag;
 mod todo;
 mod util;
 mod issue;
@@ -34,12 +35,13 @@ async fn main() {
 
     let (tx, rx) = unbounded_channel();
 
-    let fm = FileManager::default();
+    let fm = Arc::new(FileManager::default());
 
     let found_count = Arc::new(AtomicUsize::new(0));
 
     let scan_handle = tokio::task::spawn_blocking({
         let tx = tx.clone();
+        let fm = fm.clone();
         let found_count = found_count.clone();
         let search_ctx = SearchCtx::new(todo::TODO_REGEXP);
         move || rayon_pool.install(move || {
@@ -61,7 +63,8 @@ async fn main() {
     let issue_handle = tokio::spawn(issue::issue(
         rx,
         token,
-        max_http_concurrency
+        max_http_concurrency,
+        fm
     ));
 
     _ = scan_handle.await;

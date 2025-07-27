@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use dashmap::DashMap;
 use rustc_hash::FxBuildHasher;
-use memmap2::{Mmap, MmapOptions};
-use dashmap::mapref::one::{MappedRef, Ref, RefMut};
+use memmap2::{MmapMut, MmapOptions};
+use dashmap::mapref::one::{Ref, RefMut, MappedRef, MappedRefMut};
 
 pub type FxDashMap<K, V> = DashMap<K, V, FxBuildHasher>;
 
@@ -15,7 +15,8 @@ type FileRefMut<'a> = RefMut<'a, FileId, StalkrFile>;
 pub type FilePathGuard<'a> = MappedRef<'a, FileId, StalkrFile, String>;
 
 type BufGuard<'a>  = MappedRef<'a, FileId, StalkrFile, Vec<u8>>;
-type MmapGuard<'a> = MappedRef<'a, FileId, StalkrFile, Mmap>;
+type MmapGuard<'a> = MappedRef<'a, FileId, StalkrFile, MmapMut>;
+type MmapGuardMut<'a> = MappedRefMut<'a, FileId, StalkrFile, MmapMut>;
 
 #[derive(Eq, Hash, Copy, Clone, Debug, PartialEq)]
 pub struct FileId(u32);
@@ -23,7 +24,7 @@ pub struct FileId(u32);
 #[derive(Debug)]
 pub enum StalkrFileContents {
     Buf(Vec<u8>),
-    Mmap(Mmap)
+    Mmap(MmapMut)
 }
 
 impl StalkrFileContents {
@@ -35,40 +36,44 @@ impl StalkrFileContents {
 
     #[track_caller]
     #[inline(always)]
-    pub fn as_mmap_unchecked(&self) -> &Mmap {
+    pub fn as_mmap_unchecked(&self) -> &MmapMut {
         match self { Self::Mmap(m) => m, _ => unreachable!() }
     }
-}
 
-#[derive(Debug)]
-pub enum StalkrFileState {
-    Read(StalkrFileContents),
-    NotRead(File)
+    #[track_caller]
+    #[inline(always)]
+    pub fn as_mmap_unchecked_mut(&mut self) -> &mut MmapMut {
+        match self { Self::Mmap(m) => m, _ => unreachable!() }
+    }
 }
 
 #[derive(Debug)]
 pub struct StalkrFile {
     // user path (not canonicalized)
     #[allow(unused)]
-    upath: String,
+    pub upath: String,
 
-    meta: fs::Metadata,
+    pub meta: fs::Metadata,
 
-    state: StalkrFileState
+    pub handle: File,
+
+    contents: Option<StalkrFileContents>
 }
 
 impl StalkrFile {
     #[inline(always)]
     pub fn new(upath: String, handle: File, meta: fs::Metadata) -> Self {
-        Self { meta, upath, state: StalkrFileState::NotRead(handle) }
+        Self { meta, upath, handle, contents: None }
     }
 
     #[inline(always)]
-    pub fn contents_unchecked(&self) -> &StalkrFileContents {
-        match &self.state {
-            StalkrFileState::Read(contents) => contents,
-            _ => unreachable!()
-        }
+    pub fn read_contents_unchecked(&self) -> &StalkrFileContents {
+        unsafe { self.contents.as_ref().unwrap_unchecked() }
+    }
+
+    #[inline(always)]
+    pub fn read_contents_unchecked_mut(&mut self) -> &mut StalkrFileContents {
+        unsafe { self.contents.as_mut().unwrap_unchecked() }
     }
 }
 
@@ -87,13 +92,44 @@ impl FileManager {
     }
 
     #[inline(always)]
-    fn get_file_unchecked_mut(&self, file_id: FileId) -> FileRefMut<'_> {
+    pub fn get_file_unchecked_mut(&self, file_id: FileId) -> FileRefMut<'_> {
         self.files.get_mut(&file_id).unwrap()
     }
 
     #[inline(always)]
     pub fn get_file_path_unchecked(&self, file_id: FileId) -> FilePathGuard<'_> {
         self.get_file_unchecked(file_id).map(|f| &f.upath)
+    }
+
+    #[inline]
+    pub fn drop_entry(&self, file_id: FileId) {
+        self.files.remove(&file_id);
+    }
+
+    pub fn get_mmap_or_remmap_file_mut(
+        &self,
+        file_id: FileId,
+        new_len: usize,
+    ) -> io::Result<MmapGuardMut<'_>> {
+        let mut entry = self.get_file_unchecked_mut(file_id);
+
+        let orig_len = entry.meta.len() as usize;
+
+        if orig_len == new_len && matches!(entry.contents, Some(StalkrFileContents::Mmap(_))) {
+            // no need to remmap
+            return Ok(entry.map(|f| f.read_contents_unchecked_mut().as_mmap_unchecked_mut()))
+        }
+
+        entry.handle.set_len(new_len as _)?;
+
+        let mut opts = MmapOptions::new();
+        opts.len(new_len);
+
+        let mmap = unsafe { opts.map_mut(&entry.handle)? };
+
+        entry.contents = Some(StalkrFileContents::Mmap(mmap));
+
+        Ok(entry.map(|f| f.read_contents_unchecked_mut().as_mmap_unchecked_mut()))
     }
 
     pub fn read_file_to_end(&self, file_id: FileId) -> io::Result<BufGuard<'_>> {
@@ -103,23 +139,18 @@ impl FileManager {
 
         #[inline]
         fn get_buf(e: FileRefMut<'_>) -> BufGuard<'_> {
-            e.downgrade().map(|f| f.contents_unchecked().as_buf_unchecked())
+            e.downgrade().map(|f| f.read_contents_unchecked().as_buf_unchecked())
         }
 
-        match &mut entry.state {
-            StalkrFileState::Read(StalkrFileContents::Buf(_)) => {
-                return Ok(get_buf(entry))
-            }
+        match entry.contents {
+            Some(StalkrFileContents::Buf(_)) => {}
+            Some(StalkrFileContents::Mmap(_)) => panic!("`read_file_to_end` called on a mmapped file"),
 
-            StalkrFileState::NotRead(file) => {
+            None => {
                 let mut buf = Vec::with_capacity(file_size);
-                file.read_to_end(&mut buf)?;
-                entry.state = StalkrFileState::Read(
-                    StalkrFileContents::Buf(buf)
-                )
+                entry.handle.read_to_end(&mut buf)?;
+                entry.contents = Some(StalkrFileContents::Buf(buf))
             }
-
-            StalkrFileState::Read(_) => {}
         }
 
         Ok(get_buf(entry))
@@ -128,20 +159,20 @@ impl FileManager {
     pub fn mmap_file(&self, file_id: FileId) -> io::Result<MmapGuard<'_>> {
         let mut entry = self.get_file_unchecked_mut(file_id);
 
-        if let StalkrFileState::Read(StalkrFileContents::Mmap(_)) = &entry.state {
-            return Ok(entry.downgrade().map(|f| f.contents_unchecked().as_mmap_unchecked()));
+        if let Some(StalkrFileContents::Mmap(_)) = &entry.contents {
+            return Ok(entry.downgrade().map(|f| f.read_contents_unchecked().as_mmap_unchecked()))
         }
 
-        if let StalkrFileState::NotRead(file) = &entry.state {
+        if entry.contents.is_none() {
             let mut opts = MmapOptions::new();
             opts.len(entry.meta.len() as usize);
 
-            let mmap = unsafe { opts.map(file)? };
+            let mmap = unsafe { opts.map_mut(&entry.handle)? };
 
-            entry.state = StalkrFileState::Read(StalkrFileContents::Mmap(mmap));
+            entry.contents = Some(StalkrFileContents::Mmap(mmap));
         }
 
-        Ok(entry.downgrade().map(|f| f.contents_unchecked().as_mmap_unchecked()))
+        Ok(entry.downgrade().map(|f| f.read_contents_unchecked().as_mmap_unchecked()))
     }
 
     #[inline]
