@@ -69,7 +69,9 @@ impl Todo {
 
             if line.is_empty() { continue }
 
-            if line.starts_with("TODO:") { break }
+            if ["TODO:", "TODO("].iter().any(|p| line.starts_with(p)) {
+                break
+            }
 
             lines.push(line.to_owned())
         }
