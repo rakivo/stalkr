@@ -9,7 +9,7 @@ pub const TODO_REGEXP: &str = r"(?m)^\s*(?://|#|/\*)\s*TODO:\s*(.+)$";
 
 #[derive(Debug)]
 pub struct Description {
-    pub lines: Vec<String>
+    pub lines: Box<[Box<str>]>
 }
 
 impl Description {
@@ -72,12 +72,17 @@ impl Todo {
                 break
             }
 
-            lines.push(line.to_owned())
+            let line = line.to_owned();
+
+            let line = util::string_into_boxed_str_norealloc(line);
+
+            lines.push(line);
         }
 
         if lines.is_empty() {
             None
         } else {
+            let lines = util::vec_into_boxed_slice_norealloc(lines);
             Some(Description { lines })
         }
     }

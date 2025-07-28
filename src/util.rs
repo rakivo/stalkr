@@ -45,6 +45,7 @@ pub fn extract_text_from_a_comment(h: &str) -> Option<&str> {
     Some(h[comment_end..].trim())
 }
 
+// NOTE: this function leaks a little bit of memory but its 2025 just buy more RAM
 #[inline]
 pub fn vec_into_boxed_slice_norealloc<T>(mut v: Vec<T>) -> Box<[T]> {
     let len = v.len();
@@ -54,6 +55,25 @@ pub fn vec_into_boxed_slice_norealloc<T>(mut v: Vec<T>) -> Box<[T]> {
 
     unsafe {
         Box::from_raw(slice::from_raw_parts_mut(ptr, len))
+    }
+}
+
+// NOTE: this function does too
+#[inline]
+pub fn string_into_boxed_str_norealloc(s: String) -> Box<str> {
+    let s = s.into_bytes();
+    let s = vec_into_boxed_slice_norealloc(s);
+
+    let len = s.len();
+    let ptr = Box::into_raw(s) as _;
+
+    unsafe {
+        let slice = slice::from_raw_parts_mut(ptr, len);
+
+        // SAFETY: String `s` constains valid UTF-8 bytes
+        let str = str::from_utf8_unchecked_mut(slice);
+
+        Box::from_raw(str)
     }
 }
 
