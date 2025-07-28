@@ -31,7 +31,7 @@ impl Prompter {
             let to_report = loop {
                 util::clear_screen();
 
-                println!("todo's from: {file_name}\n");
+                println!("[todoʼs from]: {file_name}\n");
 
                 // build all prefixes and find max width to pad all titles
                 let prefixes = todos
