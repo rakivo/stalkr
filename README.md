@@ -1,5 +1,7 @@
 > [!Warning]
-> The app is UNFINISHED
+> stalkr is UNFINISHED
+
+![](https://github.com/rakivo/stalkr/blob/master/assets/pipeline-diagram.png)
 
 # Quick start
 
@@ -8,3 +10,4 @@ $ export STALKR_GITHUB_TOKEN=<your github token>
 $ cargo run --release
 ```
 
+> originally fork of `https://github.com/tsoding/snitch`
