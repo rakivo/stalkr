@@ -10,4 +10,4 @@ $ export STALKR_GITHUB_TOKEN=<your github token>
 $ cargo run --release
 ```
 
-> originally fork of (tsoding/snitch)[https://github.com/tsoding/snitch]
+> originally fork of [`tsoding/snitch`](https://github.com/tsoding/snitch)
