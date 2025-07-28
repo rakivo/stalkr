@@ -1,3 +1,6 @@
+// TODO(#4): Improve UX of TODO selection
+// TODO(#5): Unhard-code owner/repo
+// TODO(#3): Auto-detect owner and repo
 // TODO(#2): Commit tag-insertion to the origin
 
 use std::sync::Arc;
