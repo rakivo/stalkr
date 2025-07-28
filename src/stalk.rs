@@ -1,4 +1,4 @@
-use crate::todo::Todos;
+use crate::prompt::Prompt;
 use crate::search::SearchCtx;
 use crate::fm::{FileManager, StalkrFile};
 
@@ -16,7 +16,7 @@ pub fn stalk(
     file_path: PathBuf,
     search_ctx: &SearchCtx,
     found_count: &AtomicUsize,
-    tx: &UnboundedSender<Todos>,
+    prompter_tx: &UnboundedSender<Prompt>,
     fm: &FileManager
 ) -> anyhow::Result<()> {
     let file = OpenOptions::new()
@@ -39,7 +39,7 @@ pub fn stalk(
     let file_id = fm.register_file(path_str, stalkr_file);
 
     let search = |haystack: &[u8]| {
-        search_ctx.search(haystack, found_count, tx, fm, file_id)
+        search_ctx.search(haystack, found_count, prompter_tx, file_id)
     };
 
     let any = if file_size < MMAP_THRESHOLD {

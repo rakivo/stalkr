@@ -17,8 +17,10 @@ mod util;
 mod issue;
 mod stalk;
 mod search;
+mod prompt;
 
 use fm::FileManager;
+use prompt::Prompter;
 use search::SearchCtx;
 
 use dir_rec::DirRec;
@@ -40,16 +42,34 @@ async fn main() {
         .build()
         .unwrap();
 
-    let (issue_tx, issue_rx) = unbounded_channel();
+    // stalkr workers  -> prompter thread
+    let (prompter_tx, prompter_rx) = unbounded_channel();
+
+    // prompter thread -> issue workers
+    let (issue_tx   ,    issue_rx) = unbounded_channel();
+
+    // issue workers   -> inserter workers
+    let (inserter_tx, inserter_rx) = unbounded_channel();
+
+    // the count of found (unreported + reported) todo's
+    let found_count = Arc::new(AtomicUsize::new(1));
 
     let fm = Arc::new(FileManager::default());
 
-    let found_count = Arc::new(AtomicUsize::new(1));
+    let mut prompter = Prompter {
+        fm: fm.clone(),
+        prompter_rx,
+        issue_tx: issue_tx.clone(),
+    };
 
-    let scan_handle = tokio::task::spawn_blocking({
-        let tx = issue_tx.clone();
+    let prompter_task = tokio::task::spawn(async move {
+        prompter.prompt_loop().await
+    });
+
+    let stalkr_task = tokio::task::spawn_blocking({
         let fm = fm.clone();
         let found_count = found_count.clone();
+        let prompter_tx = prompter_tx.clone();
         let search_ctx = SearchCtx::new(todo::TODO_REGEXP);
         move || rayon_pool.install(move || {
             DirRec::new(".")
@@ -60,40 +80,39 @@ async fn main() {
                         e,
                         &search_ctx,
                         &found_count,
-                        &tx,
+                        &prompter_tx,
                         &fm
                     );
                 });
         })
     });
 
-    let (tag_tx, tag_rx) = unbounded_channel();
-
-    let issue_handle = tokio::spawn({
+    let issue_task = tokio::spawn({
         issue::issue(
             issue_rx,
-            tag_tx,
+            inserter_tx,
             token,
             max_http_concurrency,
             fm.clone(),
         )
     });
 
-    let num_inserters = num_cpus.min(4);
-
     let inserter_task = tokio::spawn(
         tag::poll_ready_files(
-            tag_rx,
+            inserter_rx,
             fm.clone(),
-            num_inserters,
+            num_cpus.min(4)
         )
     );
 
-    _ = scan_handle.await;
+    _ = stalkr_task.await;
 
     drop(issue_tx);
+    drop(prompter_tx);
 
-    let reported_count = issue_handle.await.unwrap();
+    prompter_task.await.unwrap();
+
+    let reported_count = issue_task.await.unwrap();
 
     inserter_task.await.unwrap();
 

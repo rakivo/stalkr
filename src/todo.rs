@@ -42,7 +42,8 @@ impl fmt::Display for DisplayDescription<'_> {
 #[derive(Debug)]
 pub struct Todo {
     pub loc: Loc,
-    pub title: String,
+    pub preview: Box<str>,
+    pub title: Box<str>,
     pub todo_byte_offset: usize,
     pub description: Option<Description>
 }

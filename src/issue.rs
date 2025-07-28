@@ -109,13 +109,15 @@ pub async fn issue(
         let reported_count = reported_count.clone();
 
         async move {
+            debug_assert!(!todos.is_empty());
+
             let file_id = todos[0].loc.file_id();
 
             stream::iter(todos.into_iter()).for_each_concurrent(4, |todo| {
+                let fm             = fm.clone();
                 let url            = url.clone();
                 let rq_client      = rq_client.clone();
                 let reported_count = reported_count.clone();
-                let fm             = fm.clone();
 
                 async move {
                     issue_todo(todo, url, rq_client, reported_count, fm).await;

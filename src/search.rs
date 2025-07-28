@@ -1,11 +1,10 @@
 use crate::util;
 use crate::loc::Loc;
-use crate::todo::{Todo, Todos};
-use crate::fm::{FileId, FileManager};
+use crate::fm::FileId;
+use crate::todo::Todo;
+use crate::prompt::Prompt;
 
 use std::path::PathBuf;
-use std::fmt::Write as FmtWrite;
-use std::io::{self, Write as IoWrite};
 use std::sync::atomic::{Ordering, AtomicUsize};
 
 use regex_automata::dfa::regex::Regex;
@@ -32,15 +31,12 @@ impl SearchCtx {
         &self,
         haystack: &[u8],
         found_count: &AtomicUsize,
-        tx: &UnboundedSender<Todos>,
-        fm: &FileManager,
+        prompter_tx: &UnboundedSender<Prompt>,
         file_id: FileId
     ) -> anyhow::Result<bool> {
         let line_starts = Loc::precompute(haystack);
 
-        let mut stdout_buf = String::new();
-
-        let todos = self.regex.find_iter(haystack).filter_map(|mat| {
+        let todos = self.regex.find_iter(haystack).map(|mat| {
             found_count.fetch_add(1, Ordering::SeqCst);
 
             let start = mat.start();
@@ -53,39 +49,26 @@ impl SearchCtx {
 
             let title = Todo::extract_todo_title(preview);
 
-            let desc = Todo::extract_todo_description(unsafe {
+            let description = Todo::extract_todo_description(unsafe {
                 std::str::from_utf8_unchecked(&haystack[end + 1..])
             });
 
-            writeln!(stdout_buf, "found TODO at {l}: {preview}", l = loc.display(fm)).ok()?;
-            writeln!(stdout_buf, "  title: \"{title}\"").ok()?;
-            if let Some(desc) = &desc {
-                writeln!(stdout_buf, "  description:\n{d}", d = desc.display(4)).ok()?;
-            }
-
-            // flush buffered message to stdout under lock
-            let should_report = {
-                let mut g = io::stdout().lock();
-                writeln!(g, "{stdout_buf}").ok()?;
-                stdout_buf.clear();
-                util::ask_yn("report it?")
-            };
-
-            if !should_report { return None }
-
-            let todo_byte_offset = start +
-                preview.len() -
-                util::trim_comment_start(preview).len() +
-                "TODO".len();
-
-            let todo = Todo {
+            Todo {
                 loc,
-                todo_byte_offset,
-                description: desc,
-                title: title.to_owned(),
-            };
-
-            Some(todo)
+                description,
+                todo_byte_offset: {
+                    start +
+                    preview.len() -
+                    util::trim_comment_start(preview).len() +
+                    "TODO".len()
+                },
+                preview: util::string_into_boxed_str_norealloc(
+                    preview.to_owned()
+                ),
+                title: util::string_into_boxed_str_norealloc(
+                    title.to_owned()
+                )
+            }
         }).collect::<Vec<_>>();
 
         if todos.is_empty() {
@@ -94,7 +77,9 @@ impl SearchCtx {
 
         let todos = util::vec_into_boxed_slice_norealloc(todos);
 
-        tx.send(todos).expect("could not send todos to issue worker");
+        prompter_tx.send(Prompt {
+            todos
+        }).expect("could not send todos to issue worker");
 
         Ok(true)
     }
