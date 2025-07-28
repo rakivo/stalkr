@@ -14,11 +14,17 @@ pub struct Description {
 
 impl Description {
     #[inline]
-    pub fn display(&self, line_start_offset: usize) -> DisplayDescription<'_> {
-        DisplayDescription {
-            desc: self,
-            line_start_offset
-        }
+    pub fn from_str(s: &str) -> Self {
+        let lines = s.lines().map(|l| {
+            util::string_into_boxed_str_norealloc(l.trim().to_owned())
+        }).collect();
+
+        Self { lines }
+    }
+
+    #[inline(always)]
+    pub const fn display(&self, line_start_offset: usize) -> DisplayDescription<'_> {
+        DisplayDescription { desc: self, line_start_offset }
     }
 }
 
@@ -31,8 +37,9 @@ impl fmt::Display for DisplayDescription<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let tab = " ".repeat(self.line_start_offset);
 
-        for l in &self.desc.lines {
-            writeln!(f, "{tab}{l}")?
+        for (i, l) in self.desc.lines.iter().enumerate() {
+            write!(f, "{tab}{l}")?;
+            if i < self.desc.lines.len() - 1 { writeln!(f)? }
         }
 
         Ok(())
@@ -42,6 +49,7 @@ impl fmt::Display for DisplayDescription<'_> {
 #[derive(Debug)]
 pub struct Todo {
     pub loc: Loc,
+    #[allow(unused)]
     pub preview: Box<str>,
     pub title: Box<str>,
     pub todo_byte_offset: usize,

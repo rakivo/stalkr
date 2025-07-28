@@ -1,18 +1,23 @@
 use std::{mem, slice};
 use std::io::{self, Write};
 
-pub fn ask_yn(prompt: &str) -> bool {
-    print!("{prompt} [y/n]: ");
+#[inline]
+pub fn clear_screen() {
+    print!("\x1B[2J\x1B[1;1H");
     io::stdout().flush().unwrap();
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-
-    let input = input.trim();
-
-    input.eq_ignore_ascii_case("y") || input.eq_ignore_ascii_case("yes")
 }
 
+#[inline]
+pub fn ask_input(prompt: &str) -> String {
+    print!("{prompt} ");
+    io::stdout().flush().unwrap();
+
+    let mut buf = String::new();
+    io::stdin().read_line(&mut buf).unwrap();
+    buf
+}
+
+#[inline]
 pub fn trim_comment_start(s: &str) -> &str {
     s
         .trim_start()
@@ -23,6 +28,7 @@ pub fn trim_comment_start(s: &str) -> &str {
         .trim_start()
 }
 
+#[inline]
 pub fn is_line_a_comment(h_: &str) -> Option<usize> {
     let h = h_.trim_start();
 
@@ -39,6 +45,7 @@ pub fn is_line_a_comment(h_: &str) -> Option<usize> {
     Some(h_.len() - h.len() + comment_offset)
 }
 
+#[inline]
 #[allow(unused)]
 pub fn extract_text_from_a_comment(h: &str) -> Option<&str> {
     let comment_end = is_line_a_comment(h)?;

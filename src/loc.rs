@@ -11,7 +11,6 @@ impl Loc {
     #[inline(always)]
     pub const fn file_id(&self) -> FileId { self.0 }
 
-    #[allow(unused)]
     #[inline(always)]
     #[doc(alias = "row")]
     pub const fn line_number(&self) -> u32 { self.1 }
@@ -51,6 +50,7 @@ impl Loc {
         } v
     }
 
+    #[allow(unused)]
     #[inline(always)]
     pub fn display<'a>(&self, fm: &'a FileManager) -> DisplayLoc<'a> {
         let file_path = fm.get_file_path_unchecked(self.0);
