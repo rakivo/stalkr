@@ -36,9 +36,7 @@ impl SearchCtx {
     ) -> anyhow::Result<bool> {
         let line_starts = Loc::precompute(haystack);
 
-        let todos = self.regex.find_iter(haystack).map(|mat| {
-            found_count.fetch_add(1, Ordering::SeqCst);
-
+        let todos = self.regex.find_iter(haystack).filter_map(|mat| {
             let start = mat.start();
             let end   = mat.end().min(haystack.len());
             let bytes = &haystack[start..end];
@@ -53,22 +51,38 @@ impl SearchCtx {
                 std::str::from_utf8_unchecked(&haystack[end + 1..])
             });
 
-            Todo {
+            // e.g.
+            // ... TODO: ...
+            //     ^
+            let todo_byte_offset = {
+                start +
+                preview.len() -
+                util::trim_comment_start(preview).len() +
+                "TODO".len()
+            };
+
+            let local_todo_byte_offset = todo_byte_offset - start;
+
+            if bytes[local_todo_byte_offset] == b'(' {
+                // since this todo has a tag => it's already reported
+                return None
+            }
+
+            found_count.fetch_add(1, Ordering::SeqCst);
+
+            let todo = Todo {
                 loc,
                 description,
-                todo_byte_offset: {
-                    start +
-                    preview.len() -
-                    util::trim_comment_start(preview).len() +
-                    "TODO".len()
-                },
+                todo_byte_offset,
                 preview: util::string_into_boxed_str_norealloc(
                     preview.to_owned()
                 ),
                 title: util::string_into_boxed_str_norealloc(
                     title.to_owned()
                 )
-            }
+            };
+
+            Some(todo)
         }).collect::<Vec<_>>();
 
         if todos.is_empty() {
