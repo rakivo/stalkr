@@ -47,7 +47,7 @@ async fn issue_todo(
                         byte_offset: todo.todo_byte_offset as _,
                     };
 
-                    fm.add_tag_to_file(todo.src_file_id, tag);
+                    fm.add_tag_to_file(todo.loc.file_id(), tag);
                 }
                 Err(e) => eprintln!("[failed to parse JSON response: {e}]")
             }
@@ -109,7 +109,7 @@ pub async fn issue(
         let reported_count = reported_count.clone();
 
         async move {
-            let file_id = todos[0].src_file_id;
+            let file_id = todos[0].loc.file_id();
 
             stream::iter(todos.into_iter()).for_each_concurrent(4, |todo| {
                 let url            = url.clone();

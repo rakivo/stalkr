@@ -1,6 +1,5 @@
 use crate::util;
 use crate::loc::Loc;
-use crate::fm::FileId;
 
 use std::fmt;
 
@@ -42,10 +41,8 @@ impl fmt::Display for DisplayDescription<'_> {
 
 #[derive(Debug)]
 pub struct Todo {
-    #[allow(unused)]
-    pub src_loc: Loc,
+    pub loc: Loc,
     pub title: String,
-    pub src_file_id: FileId,
     pub todo_byte_offset: usize,
     pub description: Option<Description>
 }

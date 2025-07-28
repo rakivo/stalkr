@@ -8,6 +8,19 @@ pub struct Loc(pub FileId, pub u32, pub u32);
 impl Loc {
     const AVERAGE_LINES_COUNT: usize = 256;
 
+    #[inline(always)]
+    pub const fn file_id(&self) -> FileId { self.0 }
+
+    #[allow(unused)]
+    #[inline(always)]
+    #[doc(alias = "row")]
+    pub const fn line_number(&self) -> u32 { self.1 }
+
+    #[allow(unused)]
+    #[inline(always)]
+    #[doc(alias = "col")]
+    pub const fn column_number(&self) -> u32 { self.2 }
+
     // O(log lines_count)
     #[inline]
     pub fn from_precomputed(
