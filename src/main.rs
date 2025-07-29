@@ -44,7 +44,7 @@ async fn main() {
     rayon::ThreadPoolBuilder::new()
         .num_threads(rayon_threads)
         .build_global()
-        .expect("could not build global rayon threadpool");
+        .expect("[could not build global rayon threadpool]");
 
     // ---------------------- worker channels ----------------------
 
@@ -96,16 +96,16 @@ async fn main() {
         inserter_rx
     );
 
-    _ = stalkr_task.await;
+    stalkr_task.await.expect("[could not await parsing workers]");
 
     drop(issue_tx);
     drop(prompter_tx);
 
-    prompter_task.await.unwrap();
+    prompter_task.await.expect("[could not await prompting thread]");
 
-    issue_task.await.unwrap();
+    issue_task.await.expect("[could not await issuing workers]");
 
-    inserter_task.await.unwrap();
+    inserter_task.await.expect("[could not await tag inserting workers]");
 
     let found_count    = found_count.load(Ordering::SeqCst);
     let reported_count = reported_count.load(Ordering::SeqCst);
