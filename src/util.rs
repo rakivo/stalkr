@@ -1,5 +1,5 @@
-use std::{mem, slice};
 use std::io::{self, Write};
+use std::{fs, mem, env, slice};
 
 #[inline]
 pub fn clear_screen() {
@@ -106,3 +106,79 @@ pub fn balance_concurrency(cpu_count: usize) -> (usize, usize) {
     (rayon_threads, max_concurrency)
 }
 
+pub fn get_git_origin_url() -> Option<String> {
+    let mut dir = env::current_dir().ok()?;
+    loop {
+        let config = dir.join(".git/config");
+
+        if config.exists() {
+            let contents = fs::read_to_string(config).ok()?;
+
+            let mut in_origin = false;
+            for line in contents.lines() {
+                let line = line.trim();
+                if line.starts_with("[remote \"") {
+                    in_origin = line.contains("\"origin\"");
+                } else if in_origin && line.starts_with("url") {
+                    return line.split('=')
+                        .nth(1)
+                        .map(|s| s.trim().to_owned())
+                }
+            }
+
+            break
+        }
+
+        // go up
+        if !dir.pop() { break }
+    }
+
+    None
+}
+
+pub fn parse_owner_repo(url: &str) -> Option<(String, String)> {
+    // find the "github.com/" or "github.com:" pivot
+    let pivot = url.find("github.com/").or_else(|| url.find("github.com:"))?;
+    // slice just after the slash/colon
+    let rest = &url[pivot + "github.com/".len()..];
+    // split into owner and repo.git?
+    let mut parts = rest.splitn(2, '/');
+
+    let owner = parts.next()?.to_owned();
+    let mut repo = parts.next()?.to_owned();
+
+    // strip optional ".git" suffix
+    if repo.ends_with(".git") {
+        repo.truncate(repo.len() - 4);
+    }
+
+    Some((owner, repo))
+}
+
+macro_rules! make_spawn {
+    (
+        $rx_inner_ty: ty,
+        $(#[$meta:meta]) *
+        $vis:vis fn new(
+            $($arg_name:ident : $arg_ty:ty), * $(,)?
+        ) -> Self
+        $body: block
+    ) => {
+        $(#[$meta]) *
+        $vis fn new(
+            $($arg_name : $arg_ty), *
+        ) -> Self
+        $body
+
+        /// Spawn the issuing loop and return its JoinHandle.
+        ///
+        /// Takes *all* of `new`'s parameters, plus the `issue_rx` at the end.
+        $vis fn spawn(
+            $($arg_name : $arg_ty, ) *
+            rx: tokio::sync::mpsc::UnboundedReceiver<$rx_inner_ty>
+        ) -> tokio::task::JoinHandle<()> {
+            let me = Self::new($($arg_name), *);
+            tokio::spawn(async move { me.run(rx).await; })
+        }
+    };
+}

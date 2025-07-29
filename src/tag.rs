@@ -20,75 +20,92 @@ impl fmt::Display for Tag {
     }
 }
 
-pub async fn poll_ready_files(
-    mut tag_rx: UnboundedReceiver<FileId>,
+#[derive(Clone)]
+pub struct TagInserter {
     fm: Arc<FileManager>,
-    inserter_count: usize,
-) {
-    let sem = Arc::new(Semaphore::new(inserter_count));
-
-    while let Some(file_id) = tag_rx.recv().await {
-        let permit = sem.clone().acquire_owned().await.unwrap();
-        let fm_clone = fm.clone();
-
-        tokio::task::spawn_blocking(move || {
-            if let Err(err) = insert_tags(file_id, &fm_clone) {
-                eprintln!{
-                    "[tag] failed to insert tags for file {file_id:?}: {err:#}"
-                }
-            }
-
-            drop(permit);
-        });
-    }
+    max_inserter_concurrency: usize
 }
 
-fn insert_tags(file_id: FileId, fm: &FileManager) -> io::Result<()> {
-    let mut insertions = mem::take(
-        &mut fm.get_file_unchecked_mut(file_id).tags
-    );
-
-    if insertions.is_empty() {
-        return Ok(())
+impl TagInserter {
+    make_spawn!{
+        FileId,
+        #[inline]
+        pub fn new(
+            fm: Arc<FileManager>,
+            max_inserter_concurrency: usize
+        ) -> Self {
+            Self { fm, max_inserter_concurrency }
+        }
     }
 
-    // sort ascending so that all prior inserts were at <= current offset
-    insertions.sort_by(|a, b| a.byte_offset.cmp(&b.byte_offset));
+    pub async fn run(&self, mut tag_rx: UnboundedReceiver<FileId>) {
+        let sem = Arc::new(Semaphore::new(self.max_inserter_concurrency));
 
-    let insertions = insertions.into_iter().map(|t| {
-        (t.byte_offset, t.to_string())
-    }).collect::<Vec<_>>();
+        while let Some(file_id) = tag_rx.recv().await {
+            let permit = sem.clone().acquire_owned().await.unwrap();
 
-    let total_insert_len = insertions
-        .iter()
-        .map(|(_, s)| s.len())
-        .sum::<usize>();
+            let inserter = self.clone();
 
-    let orig_len = fm.get_file_unchecked(file_id).meta.len() as usize;
-    let new_len = orig_len + total_insert_len;
+            tokio::task::spawn_blocking(move || {
+                if let Err(err) = inserter.insert_tags(file_id) {
+                    eprintln!{
+                        "[tag] failed to insert tags for file {file_id:?}: {err:#}"
+                    }
+                }
 
-    let mut mmap = fm.get_mmap_or_remmap_file_mut(file_id, new_len)?;
+                drop(permit);
+            });
+        }
+    }
 
-    let mut shift = 0;
-
-    for (byte_offset, ref tag) in insertions {
-        let byte_offset = byte_offset as usize;
-        let insert_bytes = tag.as_bytes();
-        let tag_len = insert_bytes.len();
-
-        let actual_offset = byte_offset + shift;
-        mmap.copy_within(
-            actual_offset..orig_len + shift,
-            actual_offset + tag_len,
+    fn insert_tags(&self, file_id: FileId) -> io::Result<()> {
+        let mut insertions = mem::take(
+            &mut self.fm.get_file_unchecked_mut(file_id).tags
         );
 
-        mmap[actual_offset..actual_offset + tag_len]
-            .copy_from_slice(insert_bytes);
+        if insertions.is_empty() {
+            return Ok(())
+        }
 
-        shift += tag_len;
+        // sort ascending so that all prior inserts were at <= current offset
+        insertions.sort_by(|a, b| a.byte_offset.cmp(&b.byte_offset));
+
+        let insertions = insertions.into_iter().map(|t| {
+            (t.byte_offset, t.to_string())
+        }).collect::<Vec<_>>();
+
+        let total_insert_len = insertions
+            .iter()
+            .map(|(_, s)| s.len())
+            .sum::<usize>();
+
+        let orig_len = self.fm.get_file_unchecked(file_id).meta.len() as usize;
+        let new_len = orig_len + total_insert_len;
+
+        let mut mmap = self.fm.get_mmap_or_remmap_file_mut(file_id, new_len)?;
+
+        let mut shift = 0;
+
+        for (byte_offset, ref tag) in insertions {
+            let byte_offset = byte_offset as usize;
+            let insert_bytes = tag.as_bytes();
+            let tag_len = insert_bytes.len();
+
+            let actual_offset = byte_offset + shift;
+            mmap.copy_within(
+                actual_offset..orig_len + shift,
+                actual_offset + tag_len,
+            );
+
+            mmap[actual_offset..actual_offset + tag_len]
+                .copy_from_slice(insert_bytes);
+
+            shift += tag_len;
+        }
+
+        mmap.flush()?;
+
+        Ok(())
     }
-
-    mmap.flush()?;
-
-    Ok(())
 }
+

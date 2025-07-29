@@ -41,6 +41,7 @@ impl Loc {
     }
 
     // O(n)
+    // TODO(#10): `Loc::precompute` is painfully slow
     #[inline]
     pub fn precompute(h: &[u8]) -> Vec<usize> {
         let mut v = Vec::with_capacity(Self::AVERAGE_LINES_COUNT);

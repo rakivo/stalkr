@@ -12,14 +12,23 @@ pub struct Prompt {
 
 pub struct Prompter {
     pub fm: Arc<FileManager>,
-
-    pub prompter_rx : UnboundedReceiver<Prompt>,
-    pub issue_tx    : UnboundedSender<Todos>,
+    pub issue_tx: UnboundedSender<Todos>,
 }
 
 impl Prompter {
-    pub async fn prompt_loop(&mut self) {
-        while let Some(p) = self.prompter_rx.recv().await {
+    make_spawn!{
+        Prompt,
+        #[inline]
+        pub fn new(
+            fm: Arc<FileManager>,
+            issue_tx: UnboundedSender<Todos>,
+        ) -> Self {
+            Self { fm, issue_tx }
+        }
+    }
+
+    pub async fn run(&self, mut prompter_rx: UnboundedReceiver<Prompt>) {
+        while let Some(p) = prompter_rx.recv().await {
             let Some(file_id) = p.todos.first().map(|t| t.loc.file_id()) else {
                 continue
             };

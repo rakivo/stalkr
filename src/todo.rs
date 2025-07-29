@@ -58,6 +58,14 @@ pub struct Todo {
 
 impl Todo {
     #[inline]
+    pub fn as_json_value(&self) -> serde_json::Value {
+        serde_json::json!({
+            "title": self.title,
+            "body": self.description.as_ref().map(|ls| ls.lines.join("\n"))
+        })
+    }
+
+    #[inline]
     pub fn extract_todo_title(h: &str) -> &str {
         util::trim_comment_start(h)
             .strip_prefix("TODO:")
