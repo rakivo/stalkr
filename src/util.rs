@@ -1,5 +1,5 @@
+use std::{mem, slice};
 use std::io::{self, Write};
-use std::{fs, mem, env, slice};
 
 #[inline]
 pub fn clear_screen() {
@@ -104,36 +104,6 @@ pub fn balance_concurrency(cpu_count: usize) -> (usize, usize) {
     let max_concurrency = reserved_for_async * 8;
 
     (rayon_threads, max_concurrency)
-}
-
-pub fn get_git_origin_url() -> Option<String> {
-    let mut dir = env::current_dir().ok()?;
-    loop {
-        let config = dir.join(".git/config");
-
-        if config.exists() {
-            let contents = fs::read_to_string(config).ok()?;
-
-            let mut in_origin = false;
-            for line in contents.lines() {
-                let line = line.trim();
-                if line.starts_with("[remote \"") {
-                    in_origin = line.contains("\"origin\"");
-                } else if in_origin && line.starts_with("url") {
-                    return line.split('=')
-                        .nth(1)
-                        .map(|s| s.trim().to_owned())
-                }
-            }
-
-            break
-        }
-
-        // go up
-        if !dir.pop() { break }
-    }
-
-    None
 }
 
 pub fn parse_owner_repo(url: &str) -> Option<(String, String)> {

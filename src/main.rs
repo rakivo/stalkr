@@ -13,12 +13,14 @@ mod util;
 mod fm;
 mod loc;
 mod tag;
+mod cli;
 mod todo;
 mod issue;
 mod stalk;
 mod config;
 mod prompt;
 
+use cli::Cli;
 use stalk::Stalkr;
 use issue::Issuer;
 use config::Config;
@@ -26,11 +28,14 @@ use fm::FileManager;
 use tag::TagInserter;
 use prompt::Prompter;
 
+use clap::Parser;
 use tokio::sync::mpsc::unbounded_channel;
 
 #[tokio::main]
 async fn main() {
-    let config = match Config::new() {
+    let cli = Cli::parse();
+
+    let config = match Config::new(cli) {
         Ok(cfg) => cfg,
         Err(e) => panic!("[{e}]")
     };
@@ -77,6 +82,7 @@ async fn main() {
 
     let stalkr_task = Stalkr::spawn(
         fm.clone(),
+        config.clone(),
         prompter_tx.clone(),
         found_count.clone()
     );

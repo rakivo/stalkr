@@ -1,6 +1,7 @@
 use crate::util;
 use crate::fm::FileId;
 use crate::loc::LocCache;
+use crate::config::Config;
 use crate::prompt::Prompt;
 use crate::todo::{self, Todo};
 use crate::fm::{FileManager, StalkrFile};
@@ -22,6 +23,7 @@ const MMAP_THRESHOLD: usize = 1 * 1024 * 1024;
 pub struct Stalkr {
     re: Arc<Regex>,
     prompter_tx: UnboundedSender<Prompt>,
+    config: Arc<Config>,
     fm: Arc<FileManager>,
     found_count: Arc<AtomicUsize>
 }
@@ -29,13 +31,14 @@ pub struct Stalkr {
 impl Stalkr {
     pub fn spawn(
         fm: Arc<FileManager>,
+        config: Arc<Config>,
         prompter_tx: UnboundedSender<Prompt>,
         found_count: Arc<AtomicUsize>
     ) -> JoinHandle<()> {
-        let me = Self::new(fm, prompter_tx, found_count);
+        let me = Self::new(fm, config, prompter_tx, found_count);
 
         tokio::task::spawn_blocking(move || {
-            dir_rec::DirRec::new(".")
+            dir_rec::DirRec::new(&*me.config.cwd)
                 .filter(Stalkr::filter)
                 .par_bridge()
                 .for_each(|e| _ = me.stalk(e))
@@ -45,6 +48,7 @@ impl Stalkr {
     #[inline]
     pub fn new(
         fm: Arc<FileManager>,
+        config: Arc<Config>,
         prompter_tx: UnboundedSender<Prompt>,
         found_count: Arc<AtomicUsize>
     ) -> Self {
@@ -54,7 +58,7 @@ impl Stalkr {
 
         let re = Arc::new(re);
 
-        Self { fm, re, prompter_tx, found_count }
+        Self { fm, re, config, prompter_tx, found_count }
     }
 
     pub fn stalk(&self, file_path: PathBuf) -> anyhow::Result<()> {
@@ -75,6 +79,7 @@ impl Stalkr {
             meta
         );
 
+        // TODO: Stop registering all files beforehand (the contention may be too high)
         let file_id = self.fm.register_file(path_str, stalkr_file);
 
         let any = if file_size < MMAP_THRESHOLD {

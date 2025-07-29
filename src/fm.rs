@@ -90,16 +90,19 @@ pub struct FileManager {
 }
 
 impl FileManager {
+    #[track_caller]
     #[inline(always)]
     pub fn get_file_unchecked(&self, file_id: FileId) -> FileRef<'_> {
         self.files.get(&file_id).unwrap()
     }
 
+    #[track_caller]
     #[inline(always)]
     pub fn get_file_unchecked_mut(&self, file_id: FileId) -> FileRefMut<'_> {
         self.files.get_mut(&file_id).unwrap()
     }
 
+    #[track_caller]
     #[inline(always)]
     pub fn get_file_path_unchecked(&self, file_id: FileId) -> FilePathGuard<'_> {
         self.get_file_unchecked(file_id).map(|f| &f.upath)
