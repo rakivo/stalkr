@@ -7,8 +7,8 @@ use crate::todo::{self, Todo};
 use crate::fm::{FileManager, StalkrFile};
 
 use std::sync::Arc;
-use std::path::PathBuf;
 use std::fs::OpenOptions;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rayon::prelude::*;
@@ -39,7 +39,7 @@ impl Stalkr {
 
         tokio::task::spawn_blocking(move || {
             dir_rec::DirRec::new(&*me.config.cwd)
-                .filter(Stalkr::filter)
+                .filter(|p| Stalkr::filter(p))
                 .par_bridge()
                 .for_each(|e| _ = me.stalk(e))
         })
@@ -164,7 +164,7 @@ impl Stalkr {
     }
 
     #[inline]
-    pub fn filter(e: &PathBuf) -> bool {
+    pub fn filter(e: &Path) -> bool {
         pub const BINARY_EXTENSIONS: phf::Set::<&[u8]> = phf::phf_set! {
             b"exe", b"dll", b"bin", b"o", b"so", b"a", b"lib", b"elf", b"class",
             b"jar", b"war", b"ear", b"apk", b"msi", b"iso", b"img", b"dmg", b"vmdk",
@@ -186,7 +186,6 @@ impl Stalkr {
         };
 
         let is_bin = e
-            .as_path()
             .extension()
             .map(|ext| BINARY_EXTENSIONS.contains(ext.as_encoded_bytes()))
             .unwrap_or(true);
