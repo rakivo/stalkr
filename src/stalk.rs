@@ -79,7 +79,7 @@ impl Stalkr {
             meta
         );
 
-        // TODO: Stop registering all files beforehand (the contention may be too high)
+        // TODO(#11): Stop registering all files beforehand (the contention may be too high)
         let file_id = self.fm.register_file(path_str, stalkr_file);
 
         let any = if file_size < MMAP_THRESHOLD {
