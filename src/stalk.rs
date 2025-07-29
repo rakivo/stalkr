@@ -1,6 +1,6 @@
 use crate::util;
-use crate::loc::Loc;
 use crate::fm::FileId;
+use crate::loc::LocCache;
 use crate::prompt::Prompt;
 use crate::todo::{self, Todo};
 use crate::fm::{FileManager, StalkrFile};
@@ -94,14 +94,12 @@ impl Stalkr {
 
     #[inline]
     pub fn search(&self, haystack: &[u8], file_id: FileId) -> anyhow::Result<bool> {
-        let line_starts = Loc::precompute(haystack);
+        let mut loc_cache = LocCache::new();
 
         let todos = self.re.find_iter(haystack).filter_map(|mat| {
             let start = mat.start();
             let end   = mat.end().min(haystack.len());
             let bytes = &haystack[start..end];
-
-            let loc = Loc::from_precomputed(&line_starts, start, file_id);
 
             let preview = str::from_utf8(bytes).unwrap_or("<invalid UTF-8>");
 
@@ -129,6 +127,8 @@ impl Stalkr {
             }
 
             self.found_count.fetch_add(1, Ordering::SeqCst);
+
+            let loc = loc_cache.get_loc(haystack, todo_byte_offset, file_id);
 
             let todo = Todo {
                 loc,
