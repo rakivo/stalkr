@@ -198,7 +198,7 @@ impl Stalkr {
                 if content.starts_with("TODO(#") {
                     let skip = "TODO(#".len();
 
-                    // TODO: Report error's with location in stalkr purging mode
+                    // TODO(#24): Report error's with location in stalkr purging mode
                     let closing_paren_pos = content[skip..].find(')')
                         .expect("todo tag without `)`");
 
