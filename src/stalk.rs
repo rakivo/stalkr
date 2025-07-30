@@ -144,7 +144,7 @@ impl Stalkr {
         self.fm.register_stalkr_file(stalkr_file, file_id);
 
         match mode_value {
-            ModeValue::Reporting(todos) => if !todos.is_empty() {
+            ModeValue::Reporting(todos) => {
                 self.prompter_tx.send(Prompt {
                     todos: util::vec_into_boxed_slice_norealloc(todos)
                 }).expect("could not send todos to issue worker");

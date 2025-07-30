@@ -50,7 +50,7 @@ pub fn purge(file_id: FileId, purges: Purges, config: &Config, fm: &FileManager)
     let mut mmap = fm.get_mmap_or_remmap_file_mut(file_id, new_len)?;
 
     for Purge { range, issue_number } in purges.into_iter().rev() {
-        if !issue_closed(&config, issue_number)? {
+        if !issue_closed(config, issue_number)? {
             continue
         }
 

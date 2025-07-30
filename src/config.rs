@@ -34,7 +34,7 @@ impl Config {
 
         let (owner, repo) = match Self::get_git_origin_url(
             cli.directory.to_owned(),
-            &remote
+            remote
         ).as_deref().and_then(util::parse_owner_repo) {
             Some(x) => x,
             None => return Err(anyhow::anyhow!{
