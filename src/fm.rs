@@ -1,14 +1,16 @@
 use crate::tag::Tag;
 
+use std::path::Path;
 use std::io::{self, Read};
 use std::fs::{self, File};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use dashmap::DashMap;
 use rustc_hash::FxBuildHasher;
+use dashmap::{DashMap, DashSet};
 use memmap2::{MmapMut, MmapOptions};
 use dashmap::mapref::one::{Ref, RefMut, MappedRef, MappedRefMut};
 
+pub type FxDashSet<V> = DashSet<V, FxBuildHasher>;
 pub type FxDashMap<K, V> = DashMap<K, V, FxBuildHasher>;
 
 type FileRef<'a>    = Ref<'a, FileId, StalkrFile>;
@@ -116,7 +118,10 @@ impl StalkrFile {
 pub struct FileManager {
     pub files: FxDashMap<FileId, StalkrFile>,
 
-    file_id: AtomicU32
+    file_id: AtomicU32,
+
+    // seen canonicalized filepaths
+    seen: FxDashSet<String>,
 }
 
 impl FileManager {
@@ -173,6 +178,20 @@ impl FileManager {
     pub fn next_file_id(&self) -> FileId {
         let id = self.file_id.fetch_add(1, Ordering::SeqCst);
         FileId(id)
+    }
+
+    /// Returns true if file is not seen
+    #[inline]
+    pub fn mark_seen(&self, uncanonicalized: &Path) -> bool {
+        let Ok(canonicalized) = fs::canonicalize(uncanonicalized) else {
+            panic!{
+                "could not canonicalize file path: {u}",
+                u = uncanonicalized.display()
+            }
+        };
+
+        let s = canonicalized.to_string_lossy().into_owned();
+        self.seen.insert(s)
     }
 
     #[inline]

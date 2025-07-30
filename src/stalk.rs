@@ -3,7 +3,7 @@ use crate::loc::Loc;
 use crate::fm::FileId;
 use crate::config::Config;
 use crate::prompt::Prompt;
-use crate::todo::{self, Todo, Todos};
+use crate::todo::{Todo, Todos};
 use crate::fm::{FileManager, StalkrFile};
 
 use std::str;
@@ -13,7 +13,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rayon::prelude::*;
-use memchr::memmem::Finder;
 use tokio::task::JoinHandle;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -22,7 +21,6 @@ use tokio::sync::mpsc::UnboundedSender;
 const MMAP_THRESHOLD: usize = 1 * 1024 * 1024;
 
 pub struct Stalkr {
-    finder: Arc<Finder<'static>>,
     prompter_tx: UnboundedSender<Prompt>,
     config: Arc<Config>,
     fm: Arc<FileManager>,
@@ -53,12 +51,14 @@ impl Stalkr {
         prompter_tx: UnboundedSender<Prompt>,
         found_count: Arc<AtomicUsize>
     ) -> Self {
-        let finder = Arc::new(Finder::new(todo::NEEDLE));
-
-        Self { fm, finder, config, prompter_tx, found_count }
+        Self { fm, config, prompter_tx, found_count }
     }
 
     pub fn stalk(&self, file_path: PathBuf) -> anyhow::Result<()> {
+        if !self.fm.mark_seen(&file_path) {
+            return Ok(())
+        }
+
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -122,44 +122,42 @@ impl Stalkr {
 
             let trimmed = line_str.trim_start();
 
-            if util::is_line_a_comment(trimmed).is_none() {
+            let marker_len = match util::is_line_a_comment(trimmed) {
+                Some(n) => n,
+                _ => continue
+            };
+
+            let content = trimmed[marker_len..].trim_start();
+
+            if !content.starts_with("TODO:") {
                 continue
             }
 
-            // search for "TODO:"
-            let bytes = trimmed.as_bytes();
-            if let Some(todo_rel_offset) = self.finder.find(bytes) {
-                // if it's tagged TODO(...) -> skip
-                if bytes.get(todo_rel_offset + b"TODO".len()) == Some(&b'(') {
-                    continue
-                }
+            // compute global byte offset of the 'T' in "TODO"
+            let line_start_byte    = byte_offset - line.len();
+            let ws_trimmed         = line_str.len() - trimmed.len();         // leading spaces removed
+            let rest_after_mark    = &trimmed[marker_len..];                 // before trimming spaces
+            let ws_after_marker    = rest_after_mark.len() - content.len();  // spaces removed after marker
+            let tag_insertion_offset = line_start_byte + ws_trimmed + marker_len + ws_after_marker + "TODO".len();
 
-                // compute absolute byte offset of the 'T' in "TODO"
-                let prefix_ws = line_str.len() - trimmed.len();
-                let todo_global_offset = (byte_offset - line.len()) + prefix_ws + todo_rel_offset;
-
-                let after_todo = &trimmed[todo_rel_offset..];
-                let title = Todo::extract_todo_title(after_todo);
-
-                let description = {
-                    let desc_start = byte_offset;
-                    let rest = &haystack[desc_start..];
-                    Todo::extract_todo_description(unsafe {
-                        // safe because we saw valid UTF‑8 up to the newline
-                        str::from_utf8_unchecked(rest)
-                    })
-                };
-
-                self.found_count.fetch_add(1, Ordering::SeqCst);
-
-                todos.push(Todo {
-                    description,
-                    todo_global_offset,
-                    loc: Loc(file_id, line_number - 1),
-                    preview: util::string_into_boxed_str_norealloc(after_todo.to_owned()),
-                    title:   util::string_into_boxed_str_norealloc(title.to_owned()),
+            let title = Todo::extract_todo_title(content);
+            let description = {
+                let desc_start = byte_offset;
+                let rest = &haystack[desc_start..];
+                Todo::extract_todo_description(unsafe {
+                    str::from_utf8_unchecked(rest)
                 })
-            }
+            };
+
+            self.found_count.fetch_add(1, Ordering::SeqCst);
+
+            todos.push(Todo {
+                loc: Loc(file_id, line_number - 1),
+                tag_insertion_offset,
+                preview: util::string_into_boxed_str_norealloc(content.to_owned()),
+                title:   util::string_into_boxed_str_norealloc(title.to_owned()),
+                description,
+            });
         }
 
         util::vec_into_boxed_slice_norealloc(todos)

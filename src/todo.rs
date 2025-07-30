@@ -5,8 +5,6 @@ use std::fmt;
 
 pub type Todos = Box<[Todo]>;
 
-pub const NEEDLE: &[u8] = b"TODO:";
-
 #[derive(Debug)]
 pub struct Description {
     pub lines: Box<[Box<str>]>
@@ -52,7 +50,7 @@ pub struct Todo {
     #[allow(unused)]
     pub preview: Box<str>,
     pub title: Box<str>,
-    pub todo_global_offset: usize,
+    pub tag_insertion_offset: usize,
     pub description: Option<Description>
 }
 
@@ -68,8 +66,8 @@ impl Todo {
     #[inline]
     pub fn extract_todo_title(h: &str) -> &str {
         util::trim_comment_start(h)
-            .strip_prefix("TODO:")
-            .unwrap_or(h)
+            .trim_start_matches("TODO:")
+            .trim()
             .trim_end_matches("*/")
             .trim()
     }

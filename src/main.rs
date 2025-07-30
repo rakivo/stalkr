@@ -81,6 +81,7 @@ async fn main() {
 
     let prompter_task = Prompter::spawn(
         fm.clone(),
+        config.clone(),
         issue_tx.clone(),
         prompter_rx
     );
@@ -94,7 +95,7 @@ async fn main() {
 
     let issue_task = Issuer::spawn(
         inserter_tx,
-        config,
+        config.clone(),
         fm.clone(),
         reported_count.clone(),
         max_http_concurrency,
@@ -103,6 +104,7 @@ async fn main() {
 
     let inserter_task = TagInserter::spawn(
         fm.clone(),
+        config.clone(),
         num_cpus.min(4),
         inserter_rx
     );

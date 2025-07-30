@@ -1,4 +1,5 @@
 use crate::util;
+use crate::config::Config;
 use crate::fm::FileManager;
 use crate::todo::{Todos, Description};
 
@@ -12,18 +13,23 @@ pub struct Prompt {
 
 pub struct Prompter {
     pub fm: Arc<FileManager>,
+    pub config: Arc<Config>,
     pub issue_tx: UnboundedSender<Todos>,
 }
 
 impl Prompter {
+    const SKIP_KEY: &str = "s";
+    const HELP_KEY: &str = "h";
+
     make_spawn!{
         Prompt,
         #[inline]
         pub fn new(
             fm: Arc<FileManager>,
+            config: Arc<Config>,
             issue_tx: UnboundedSender<Todos>,
         ) -> Self {
-            Self { fm, issue_tx }
+            Self { fm, config, issue_tx }
         }
     }
 
@@ -35,10 +41,16 @@ impl Prompter {
 
             let mut todos = p.todos.into_vec();
 
+            let project_url = self.config.get_project_url();
+
+            let selection_string = Self::get_selection_string();
+
             let file_name = self.fm.get_file_path_unchecked(file_id);
 
             let to_report = loop {
                 util::clear_screen();
+
+                println!("[detected project]: {project_url}\n");
 
                 println!("[todoʼs from]: {file_name}\n");
 
@@ -55,7 +67,7 @@ impl Prompter {
                 let max_width = prefixes.iter().map(|p| p.len()).max().unwrap_or(0);
 
                 // print each line with padding
-                for (i, (todo, prefix)) in todos.iter().zip(prefixes.iter()).enumerate() {
+                for (i, (todo, prefix)) in todos.iter().zip(prefixes).enumerate() {
                     // how many spaces to add so that all titles line up
                     let pad = max_width - prefix.len();
 
@@ -74,11 +86,11 @@ impl Prompter {
 
                 println!();
 
-                let cmd = util::ask_input("selection (e.g. 1,2; 'q' skip; 'h' help):");
+                let cmd = util::ask_input(&selection_string);
                 let cmd = cmd.trim();
 
-                if cmd.eq_ignore_ascii_case("q") { break None }
-                if cmd.eq_ignore_ascii_case("h") { Self::print_help(); continue }
+                if cmd.eq_ignore_ascii_case(Self::SKIP_KEY) { break None }
+                if cmd.eq_ignore_ascii_case(Self::HELP_KEY) { Self::print_help(); continue }
 
                 // editing mode
                 if let Some(pos) = cmd.find(|c: char| !c.is_ascii_digit()) {
@@ -166,6 +178,15 @@ impl Prompter {
                     .send(to_report)
                     .expect("could not send todos to issue worker");
             }
+        }
+    }
+
+    #[inline]
+    fn get_selection_string() -> String {
+        format!{
+            "selection (e.g. 1,2; 'all'; '{s}' skip; '{h}' help):",
+            s = Self::SKIP_KEY,
+            h = Self::HELP_KEY,
         }
     }
 

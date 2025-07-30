@@ -1,8 +1,9 @@
 use crate::util;
 use crate::cli::Cli;
 
-use std::{fs, env};
+use std::{fs, io, env};
 use std::path::PathBuf;
+use std::process::Command;
 
 pub struct Config {
     pub owner    : Box<str>,
@@ -21,8 +22,11 @@ impl Config {
             })
         };
 
+        let remote = cli.remote();
+
         let (owner, repo) = match Self::get_git_origin_url(
-            cli.directory.to_owned()
+            cli.directory.to_owned(),
+            &remote
         ).as_deref().and_then(util::parse_owner_repo) {
             Some(x) => x,
             None => return Err(anyhow::anyhow!{
@@ -30,16 +34,24 @@ impl Config {
             })
         };
 
-        let cwd = Box::new(cli.directory);
+        let cwd = Box::new(cli.directory.to_owned());
 
-        let owner = util::string_into_boxed_str_norealloc(owner);
-        let repo = util::string_into_boxed_str_norealloc(repo);
+        let owner    = util::string_into_boxed_str_norealloc(owner);
+        let repo     = util::string_into_boxed_str_norealloc(repo);
         let gh_token = util::string_into_boxed_str_norealloc(gh_token);
 
         Ok(Self { owner, repo, gh_token, cwd })
     }
 
-    #[inline]
+    #[inline(always)]
+    pub fn get_project_url(&self) -> String {
+        let Self { owner, repo, .. } = self;
+        format!{
+            "https://github.com/{owner}/{repo}"
+        }
+    }
+
+    #[inline(always)]
     pub fn get_issues_api_url(&self) -> String {
         let Self { owner, repo, .. } = self;
         format!{
@@ -47,7 +59,7 @@ impl Config {
         }
     }
 
-    pub fn get_git_origin_url(mut dir: PathBuf) -> Option<String> {
+    pub fn get_git_origin_url(mut dir: PathBuf, remote: &str) -> Option<String> {
         loop {
             let config = dir.join(".git/config");
 
@@ -58,7 +70,9 @@ impl Config {
                 for line in contents.lines() {
                     let line = line.trim();
                     if line.starts_with("[remote \"") {
-                        in_origin = line.contains("\"origin\"");
+                        in_origin = line.contains(&format!{
+                            "\"{remote}\""
+                        })
                     } else if in_origin && line.starts_with("url") {
                         return line.split('=')
                             .nth(1)
@@ -74,5 +88,28 @@ impl Config {
         }
 
         None
+    }
+
+    pub fn commit_changes(&self, path: &str, msg: &str) -> io::Result<()> {
+        let status = Command::new("git")
+            .arg("add")
+            .arg(path)
+            .status()?;
+
+        if !status.success() {
+            panic!("git add failed");
+        }
+
+        let status = Command::new("git")
+            .arg("commit")
+            .arg("-m")
+            .arg(msg)
+            .status()?;
+
+        if !status.success() {
+            panic!("git commit failed");
+        }
+
+        Ok(())
     }
 }

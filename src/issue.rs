@@ -110,12 +110,11 @@ impl Issuer {
                     Ok(issue_number) => {
                         self.reported_count.fetch_add(1, Ordering::SeqCst);
 
-                        let tag = Tag {
-                            issue_number,
-                            byte_offset: todo.todo_global_offset as _,
-                        };
+                        let file_id = todo.loc.file_id();
 
-                        self.fm.add_tag_to_file(todo.loc.file_id(), tag);
+                        let tag = Tag { todo, issue_number };
+
+                        self.fm.add_tag_to_file(file_id, tag);
                     }
                     Err(e) => eprintln!("[failed to parse JSON response: {e}]")
                 }
