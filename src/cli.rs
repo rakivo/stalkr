@@ -1,3 +1,5 @@
+use crate::config::{self, Mode};
+
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
@@ -28,6 +30,16 @@ impl Cli {
             Some(Commands::Purge { remote, .. })  => remote,
             Some(Commands::Report { remote, .. }) => remote,
             _ => Self::DEFAULT_REMOTE
+        }
+    }
+
+    #[inline(always)]
+    pub const fn mode(&self) -> config::Mode {
+        match &self.command {
+            Some(Commands::List { .. })  => Mode::Listing,
+            Some(Commands::Purge { .. }) => Mode::Purging,
+
+            _ => Mode::Reporting
         }
     }
 }

@@ -5,11 +5,19 @@ use std::{fs, io, env};
 use std::path::PathBuf;
 use std::process::Command;
 
+#[derive(Eq, Copy, Clone, Debug, PartialEq)]
+pub enum Mode {
+    Purging,
+    Listing,
+    Reporting
+}
+
 pub struct Config {
     pub owner    : Box<str>,
     pub repo     : Box<str>,
     pub gh_token : Box<str>,
-    pub cwd      : Box<PathBuf>
+    pub cwd      : Box<PathBuf>,
+    pub mode     : Mode
 }
 
 impl Config {
@@ -36,11 +44,13 @@ impl Config {
 
         let cwd = Box::new(cli.directory.to_owned());
 
+        let mode = cli.mode();
+
         let owner    = util::string_into_boxed_str_norealloc(owner);
         let repo     = util::string_into_boxed_str_norealloc(repo);
         let gh_token = util::string_into_boxed_str_norealloc(gh_token);
 
-        Ok(Self { owner, repo, gh_token, cwd })
+        Ok(Self { owner, repo, gh_token, cwd, mode })
     }
 
     #[inline(always)]
@@ -56,6 +66,14 @@ impl Config {
         let Self { owner, repo, .. } = self;
         format!{
             "https://api.github.com/repos/{owner}/{repo}/issues"
+        }
+    }
+
+    #[inline(always)]
+    pub fn get_issue_api_url(&self, issue_number: u64) -> String {
+        let Self { owner, repo, .. } = self;
+        format!{
+            "https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}"
         }
     }
 

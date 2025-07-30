@@ -19,6 +19,21 @@ bytecount      = { version = "=0.6.9",   default-features = false }
 memchr         = { version = "=2.7.5",   default-features = false }
 mimalloc       = { version = "=0.1.47",  default-features = false }
 phf            = { version = "=0.12.1",  default-features = false, features = ["macros"] }
-reqwest        = { version = "=0.12.22", default-features = false, features = ["json", "rustls-tls"] }
 clap           = { version = "=4.5.41",  default-features = false, features = ["std", "help", "derive"] }
 tokio          = { version = "=1.46.1",  default-features = false, features = ["macros", "rt-multi-thread"] }
+reqwest        = { version = "=0.12.22", default-features = false, features = ["json", "blocking", "rustls-tls"] }
+
+[profile.dev]
+opt-level = 0
+debug = true
+split-debuginfo = 'packed'
+
+# for debugging release mode:
+#
+# [profile.release]
+# debug = true
+# codegen-units = 1
+# overflow-checks = true    # integer overflow still checks
+# debug-assertions = true   # `debug_assert!` still runs
+# split-debuginfo = 'unpacked'
+

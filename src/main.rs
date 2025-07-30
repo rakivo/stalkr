@@ -20,6 +20,7 @@ mod tag;
 mod cli;
 mod todo;
 mod issue;
+mod purge;
 mod stalk;
 mod config;
 mod prompt;

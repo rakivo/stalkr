@@ -1,9 +1,10 @@
 use crate::util;
 use crate::loc::Loc;
 use crate::fm::FileId;
-use crate::config::Config;
+use crate::todo::Todo;
 use crate::prompt::Prompt;
-use crate::todo::{Todo, Todos};
+use crate::purge::{self, Purge};
+use crate::config::{Mode, Config};
 use crate::fm::{FileManager, StalkrFile};
 
 use std::str;
@@ -19,6 +20,56 @@ use tokio::sync::mpsc::UnboundedSender;
 // read directly anything under 1 MiB; otherwise mmap
 #[allow(clippy::identity_op)]
 const MMAP_THRESHOLD: usize = 1 * 1024 * 1024;
+
+pub enum ModeValue {
+    Reporting(Vec<Todo>),
+    Purging(Vec<Purge>),
+}
+
+impl ModeValue {
+    const RESERVE_CAP: usize = 4;
+
+    #[inline(always)]
+    fn new(mode: Mode) -> Self {
+        match mode {
+            Mode::Purging => Self::Purging(
+                Vec::with_capacity(Self::RESERVE_CAP)
+            ),
+
+            Mode::Reporting => Self::Reporting(
+                Vec::with_capacity(Self::RESERVE_CAP)
+            ),
+
+            _ => todo!()
+        }
+    }
+
+    #[inline(always)]
+    const fn is_empty(&self) -> bool {
+        match self {
+            Self::Purging(v)   => v.is_empty(),
+            Self::Reporting(v) => v.is_empty(),
+        }
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    fn push_purge(&mut self, purge: Purge) {
+        match self {
+            Self::Purging(ps) => ps.push(purge),
+            _ => unreachable!()
+        }
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    fn push_todo(&mut self, todo: Todo) {
+        match self {
+            Self::Reporting(todos) => todos.push(todo),
+            _ => unreachable!()
+        }
+    }
+}
 
 pub struct Stalkr {
     prompter_tx: UnboundedSender<Prompt>,
@@ -44,8 +95,8 @@ impl Stalkr {
         })
     }
 
-    #[inline]
-    pub fn new(
+    #[inline(always)]
+    pub const fn new(
         fm: Arc<FileManager>,
         config: Arc<Config>,
         prompter_tx: UnboundedSender<Prompt>,
@@ -78,7 +129,7 @@ impl Stalkr {
 
         let file_id = self.fm.next_file_id();
 
-        let todos = if file_size < MMAP_THRESHOLD {
+        let mode_value = if file_size < MMAP_THRESHOLD {
             let buf = stalkr_file.read_file_to_vec()?;
             self.search(buf, file_id)
         } else {
@@ -86,19 +137,30 @@ impl Stalkr {
             self.search(&mmap[..], file_id)
         };
 
-        if !todos.is_empty() {
-            self.fm.register_stalkr_file(stalkr_file, file_id);
+        if mode_value.is_empty() {
+            return Ok(())
+        }
 
-            self.prompter_tx.send(Prompt {
-                todos
-            }).expect("could not send todos to issue worker");
+        self.fm.register_stalkr_file(stalkr_file, file_id);
+
+        match mode_value {
+            ModeValue::Reporting(todos) => if !todos.is_empty() {
+                self.prompter_tx.send(Prompt {
+                    todos: util::vec_into_boxed_slice_norealloc(todos)
+                }).expect("could not send todos to issue worker");
+            }
+
+            ModeValue::Purging(purges) => {
+                let purges = util::vec_into_boxed_slice_norealloc(purges);
+                purge::purge(file_id, purges, &self.config, &self.fm)?;
+            }
         }
 
         Ok(())
     }
 
-    pub fn search(&self, haystack: &[u8], file_id: FileId) -> Todos {
-        let mut todos = Vec::with_capacity(4);
+    pub fn search(&self, haystack: &[u8], file_id: FileId) -> ModeValue {
+        let mut mode_value = ModeValue::new(self.config.mode);
 
         let mut byte_offset = 0;
         let mut line_number = 1;
@@ -129,16 +191,38 @@ impl Stalkr {
 
             let content = trimmed[marker_len..].trim_start();
 
+            let line_start = byte_offset - line.len();
+
+            // ----------- purge mode ------------
+            if self.config.mode == Mode::Purging {
+                if content.starts_with("TODO(#") {
+                    let skip = "TODO(#".len();
+
+                    // TODO: Report error's with location in stalkr purging mode
+                    let closing_paren_pos = content[skip..].find(')')
+                        .expect("todo tag without `)`");
+
+                    let issue_number = content[skip..skip + closing_paren_pos]
+                        .parse::<u64>()
+                        .expect("failed to parse issue number");
+
+                    mode_value.push_purge(Purge {
+                        issue_number,
+                        range: line_start..line_end
+                    });
+                }
+
+                continue
+            }
+
             if !content.starts_with("TODO:") {
                 continue
             }
 
-            // compute global byte offset of the 'T' in "TODO"
-            let line_start_byte    = byte_offset - line.len();
-            let ws_trimmed         = line_str.len() - trimmed.len();         // leading spaces removed
-            let rest_after_mark    = &trimmed[marker_len..];                 // before trimming spaces
-            let ws_after_marker    = rest_after_mark.len() - content.len();  // spaces removed after marker
-            let tag_insertion_offset = line_start_byte + ws_trimmed + marker_len + ws_after_marker + "TODO".len();
+            let ws_trimmed           = line_str.len() - trimmed.len();        // leading spaces removed
+            let rest_after_mark      = &trimmed[marker_len..];                // before trimming spaces
+            let ws_after_marker      = rest_after_mark.len() - content.len(); // spaces removed after marker
+            let tag_insertion_offset = line_start + ws_trimmed + marker_len + ws_after_marker + "TODO".len();
 
             let title = Todo::extract_todo_title(content);
             let description = {
@@ -151,16 +235,18 @@ impl Stalkr {
 
             self.found_count.fetch_add(1, Ordering::SeqCst);
 
-            todos.push(Todo {
+            let todo = Todo {
                 loc: Loc(file_id, line_number - 1),
                 tag_insertion_offset,
                 preview: util::string_into_boxed_str_norealloc(content.to_owned()),
-                title:   util::string_into_boxed_str_norealloc(title.to_owned()),
+                title: util::string_into_boxed_str_norealloc(title.to_owned()),
                 description,
-            });
+            };
+
+            mode_value.push_todo(todo);
         }
 
-        util::vec_into_boxed_slice_norealloc(todos)
+        mode_value
     }
 
     #[inline]
