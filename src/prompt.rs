@@ -18,8 +18,9 @@ pub struct Prompter {
 }
 
 impl Prompter {
-    const SKIP_KEY: &str = "s";
-    const HELP_KEY: &str = "h";
+    const ALL_KEY  : &str = "a";
+    const SKIP_KEY : &str = "s";
+    const HELP_KEY : &str = "h";
 
     make_spawn!{
         Prompt,
@@ -184,7 +185,8 @@ impl Prompter {
     #[inline]
     fn get_selection_string() -> String {
         format!{
-            "selection (e.g. 1,2; 'all'; '{s}' skip; '{h}' help):",
+            "selection (e.g. 1,2; '{a}' select all; '{s}' skip file; '{h}' help):",
+            a = Self::ALL_KEY,
             s = Self::SKIP_KEY,
             h = Self::HELP_KEY,
         }
