@@ -32,34 +32,3 @@ impl fmt::Display for DisplayLoc<'_> {
         write!(fm, "{file_path}:{row}")
     }
 }
-
-// per-haystack cache to compute byte_index -> Loc
-pub struct LocCache {
-    last_byte_index: usize,
-    last_row: usize,
-}
-
-impl LocCache {
-    #[inline(always)]
-    pub const fn new() -> Self {
-        Self { last_byte_index: 0, last_row: 1, }
-    }
-
-    #[inline]
-    pub fn get_loc(&mut self, haystack: &[u8], byte_index: usize, file_id: FileId) -> Loc {
-        debug_assert!(byte_index > self.last_byte_index, "sequential access expected");
-
-        let additional_newlines = bytecount::count(
-            &haystack[self.last_byte_index..byte_index],
-            b'\n'
-        );
-
-        let row = self.last_row + additional_newlines;
-
-        // update cache for next call
-        self.last_byte_index = byte_index;
-        self.last_row = row;
-
-        Loc(file_id, row as _)
-    }
-}

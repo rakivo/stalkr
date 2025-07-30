@@ -1,19 +1,20 @@
 use crate::util;
+use crate::loc::Loc;
 use crate::fm::FileId;
-use crate::loc::LocCache;
 use crate::config::Config;
 use crate::prompt::Prompt;
 use crate::todo::{self, Todo, Todos};
 use crate::fm::{FileManager, StalkrFile};
 
+use std::str;
 use std::sync::Arc;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rayon::prelude::*;
+use memchr::memmem::Finder;
 use tokio::task::JoinHandle;
-use regex_automata::dfa::regex::Regex;
 use tokio::sync::mpsc::UnboundedSender;
 
 // read directly anything under 1 MiB; otherwise mmap
@@ -21,7 +22,7 @@ use tokio::sync::mpsc::UnboundedSender;
 const MMAP_THRESHOLD: usize = 1 * 1024 * 1024;
 
 pub struct Stalkr {
-    re: Arc<Regex>,
+    finder: Arc<Finder<'static>>,
     prompter_tx: UnboundedSender<Prompt>,
     config: Arc<Config>,
     fm: Arc<FileManager>,
@@ -52,13 +53,9 @@ impl Stalkr {
         prompter_tx: UnboundedSender<Prompt>,
         found_count: Arc<AtomicUsize>
     ) -> Self {
-        let re = Regex::builder()
-            .build(todo::TODO_REGEXP)
-            .expect("could not init regex engine");
+        let finder = Arc::new(Finder::new(todo::NEEDLE));
 
-        let re = Arc::new(re);
-
-        Self { fm, re, config, prompter_tx, found_count }
+        Self { fm, finder, config, prompter_tx, found_count }
     }
 
     pub fn stalk(&self, file_path: PathBuf) -> anyhow::Result<()> {
@@ -79,7 +76,6 @@ impl Stalkr {
             meta
         );
 
-        // TODO(#11): Stop registering all files beforehand (the contention may be too high)
         let file_id = self.fm.next_file_id();
 
         let todos = if file_size < MMAP_THRESHOLD {
@@ -101,62 +97,72 @@ impl Stalkr {
         Ok(())
     }
 
-    #[inline]
     pub fn search(&self, haystack: &[u8], file_id: FileId) -> Todos {
-        let mut loc_cache = LocCache::new();
+        let mut todos = Vec::with_capacity(4);
 
-        let todos = self.re.find_iter(haystack).filter_map(|mat| {
-            let start = mat.start();
-            let end   = mat.end().min(haystack.len());
-            let bytes = &haystack[start..end];
+        let mut byte_offset = 0;
+        let mut line_number = 1;
 
-            let preview = str::from_utf8(bytes).unwrap_or("<invalid UTF-8>");
-
-            let title = Todo::extract_todo_title(preview);
-
-            let description = Todo::extract_todo_description(unsafe {
-                std::str::from_utf8_unchecked(&haystack[end + 1..])
-            });
-
-            // e.g.
-            // ... TODO: ...
-            //     ^
-            let todo_byte_offset = {
-                start +
-                preview.len() -
-                util::trim_comment_start(preview).len() +
-                "TODO".len()
+        while byte_offset < haystack.len() {
+            // find next newline
+            let nl_rel = memchr::memchr(b'\n', &haystack[byte_offset..]);
+            let line_end = match nl_rel {
+                Some(rel) => byte_offset + rel + 1, // include '\n'
+                None      => haystack.len(),        // last line w/o '\n'
             };
 
-            let local_todo_byte_offset = todo_byte_offset - start;
+            let line = &haystack[byte_offset..line_end];
 
-            if bytes[local_todo_byte_offset] == b'(' {
-                // since this todo has a tag => it's already reported
-                return None
+            byte_offset = line_end;
+            line_number += 1;
+
+            let Ok(line_str) = str::from_utf8(line) else {
+                continue
+            };
+
+            let trimmed = line_str.trim_start();
+
+            if util::is_line_a_comment(trimmed).is_none() {
+                continue
             }
 
-            self.found_count.fetch_add(1, Ordering::SeqCst);
+            // search for "TODO:"
+            let bytes = trimmed.as_bytes();
+            if let Some(todo_rel_offset) = self.finder.find(bytes) {
+                // if it's tagged TODO(...) -> skip
+                if bytes.get(todo_rel_offset + b"TODO".len()) == Some(&b'(') {
+                    continue
+                }
 
-            let loc = loc_cache.get_loc(haystack, todo_byte_offset, file_id);
+                // compute absolute byte offset of the 'T' in "TODO"
+                let prefix_ws = line_str.len() - trimmed.len();
+                let todo_global_offset = (byte_offset - line.len()) + prefix_ws + todo_rel_offset;
 
-            let todo = Todo {
-                loc,
-                description,
-                todo_byte_offset,
-                preview: util::string_into_boxed_str_norealloc(
-                    preview.to_owned()
-                ),
-                title: util::string_into_boxed_str_norealloc(
-                    title.to_owned()
-                )
-            };
+                let after_todo = &trimmed[todo_rel_offset..];
+                let title = Todo::extract_todo_title(after_todo);
 
-            Some(todo)
-        }).collect::<Vec<_>>();
+                let description = {
+                    let desc_start = byte_offset;
+                    let rest = &haystack[desc_start..];
+                    Todo::extract_todo_description(unsafe {
+                        // safe because we saw valid UTF‑8 up to the newline
+                        str::from_utf8_unchecked(rest)
+                    })
+                };
 
-        let todos = util::vec_into_boxed_slice_norealloc(todos);
+                self.found_count.fetch_add(1, Ordering::SeqCst);
 
-        todos
+                todos.push(Todo {
+                    description,
+                    todo_global_offset,
+                    loc: Loc(file_id, line_number - 1),
+                    preview: util::string_into_boxed_str_norealloc(after_todo.to_owned()),
+                    title:   util::string_into_boxed_str_norealloc(title.to_owned()),
+                })
+            }
+        }
+
+        util::vec_into_boxed_slice_norealloc(todos)
     }
 
     #[inline]

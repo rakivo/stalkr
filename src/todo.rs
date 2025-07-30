@@ -5,7 +5,7 @@ use std::fmt;
 
 pub type Todos = Box<[Todo]>;
 
-pub const TODO_REGEXP: &str = r"(?m)^\s*(?://|#|/\*)\s*TODO:\s*(.+)$";
+pub const NEEDLE: &[u8] = b"TODO:";
 
 #[derive(Debug)]
 pub struct Description {
@@ -52,7 +52,7 @@ pub struct Todo {
     #[allow(unused)]
     pub preview: Box<str>,
     pub title: Box<str>,
-    pub todo_byte_offset: usize,
+    pub todo_global_offset: usize,
     pub description: Option<Description>
 }
 

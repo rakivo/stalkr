@@ -91,7 +91,7 @@ impl StalkrFile {
             }
         }
 
-        Ok(&self.read_contents_unchecked().as_buf_unchecked())
+        Ok(self.read_contents_unchecked().as_buf_unchecked())
     }
 
     pub fn mmap_file(&mut self) -> io::Result<&MmapMut> {

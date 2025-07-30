@@ -112,7 +112,7 @@ impl Issuer {
 
                         let tag = Tag {
                             issue_number,
-                            byte_offset: todo.todo_byte_offset as _,
+                            byte_offset: todo.todo_global_offset as _,
                         };
 
                         self.fm.add_tag_to_file(todo.loc.file_id(), tag);
