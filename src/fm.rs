@@ -1,5 +1,6 @@
 use crate::tag::Tag;
 
+use std::hint;
 use std::path::Path;
 use std::io::{self, Read};
 use std::fs::{self, File};
@@ -10,7 +11,7 @@ use dashmap::{DashMap, DashSet};
 use memmap2::{MmapMut, MmapOptions};
 use dashmap::mapref::one::{Ref, RefMut, MappedRef, MappedRefMut};
 
-pub type FxDashSet<V> = DashSet<V, FxBuildHasher>;
+pub type FxDashSet<V>    = DashSet<V, FxBuildHasher>;
 pub type FxDashMap<K, V> = DashMap<K, V, FxBuildHasher>;
 
 type FileRef<'a>    = Ref<'a, FileId, StalkrFile>;
@@ -33,19 +34,28 @@ impl StalkrFileContents {
     #[track_caller]
     #[inline(always)]
     pub fn as_buf_unchecked(&self) -> &Vec<u8> {
-        match self { Self::Buf(b) => b, _ => unreachable!() }
+        match self {
+            Self::Buf(b) => b,
+            _ => unsafe { hint::unreachable_unchecked() }
+        }
     }
 
     #[track_caller]
     #[inline(always)]
     pub fn as_mmap_unchecked(&self) -> &MmapMut {
-        match self { Self::Mmap(m) => m, _ => unreachable!() }
+        match self {
+            Self::Mmap(m) => m,
+            _ => unsafe { hint::unreachable_unchecked() }
+        }
     }
 
     #[track_caller]
     #[inline(always)]
     pub fn as_mmap_unchecked_mut(&mut self) -> &mut MmapMut {
-        match self { Self::Mmap(m) => m, _ => unreachable!() }
+        match self {
+            Self::Mmap(m) => m,
+            _ => unsafe { hint::unreachable_unchecked() }
+        }
     }
 }
 

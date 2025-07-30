@@ -7,8 +7,8 @@ use crate::purge::{self, Purge};
 use crate::config::{Mode, Config};
 use crate::fm::{FileManager, StalkrFile};
 
-use std::str;
 use std::sync::Arc;
+use std::{str, hint};
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -57,7 +57,7 @@ impl ModeValue {
     fn push_purge(&mut self, purge: Purge) {
         match self {
             Self::Purging(ps) => ps.push(purge),
-            _ => unreachable!()
+            _ => unsafe { hint::unreachable_unchecked() }
         }
     }
 
@@ -66,7 +66,7 @@ impl ModeValue {
     fn push_todo(&mut self, todo: Todo) {
         match self {
             Self::Reporting(todos) => todos.push(todo),
-            _ => unreachable!()
+            _ => unsafe { hint::unreachable_unchecked() }
         }
     }
 }
