@@ -144,7 +144,7 @@ impl Prompter {
                 }
 
                 // selection mode
-                let to_report = if cmd.eq_ignore_ascii_case("all") {
+                let to_report = if cmd.eq_ignore_ascii_case(Self::ALL_KEY) {
                     todos
                 } else {
                     let mut report_indexes = cmd.split(',').filter_map(|s| {
@@ -152,8 +152,7 @@ impl Prompter {
                     }).filter(|i| *i < todos.len()).collect::<Vec<_>>();
 
                     if report_indexes.is_empty() {
-                        println!("no valid selections.");
-                        continue
+                        break None
                     }
 
                     report_indexes.sort_unstable();
