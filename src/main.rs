@@ -3,6 +3,11 @@
 // TODO(#3): Auto-detect owner and repo
 // TODO(#2): Commit tag-insertion to the origin
 
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 use std::thread;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
