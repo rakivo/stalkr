@@ -3,7 +3,7 @@ use crate::fm::FileId;
 use crate::loc::LocCache;
 use crate::config::Config;
 use crate::prompt::Prompt;
-use crate::todo::{self, Todo};
+use crate::todo::{self, Todo, Todos};
 use crate::fm::{FileManager, StalkrFile};
 
 use std::sync::Arc;
@@ -73,32 +73,36 @@ impl Stalkr {
 
         let path_str = &file_path.to_string_lossy();
 
-        let stalkr_file = StalkrFile::new(
+        let mut stalkr_file = StalkrFile::new(
             path_str.to_string(),
             file,
             meta
         );
 
         // TODO(#11): Stop registering all files beforehand (the contention may be too high)
-        let file_id = self.fm.register_file(path_str, stalkr_file);
+        let file_id = self.fm.next_file_id();
 
-        let any = if file_size < MMAP_THRESHOLD {
-            let buf = self.fm.read_file_to_end(file_id)?;
-            self.search(&buf, file_id)
+        let todos = if file_size < MMAP_THRESHOLD {
+            let buf = stalkr_file.read_file_to_vec()?;
+            self.search(buf, file_id)
         } else {
-            let mmap = self.fm.mmap_file(file_id)?;
+            let mmap = stalkr_file.mmap_file()?;
             self.search(&mmap[..], file_id)
-        }?;
+        };
 
-        if !any {
-            self.fm.drop_entry(file_id);
+        if !todos.is_empty() {
+            self.fm.register_stalkr_file(stalkr_file, file_id);
+
+            self.prompter_tx.send(Prompt {
+                todos
+            }).expect("could not send todos to issue worker");
         }
 
         Ok(())
     }
 
     #[inline]
-    pub fn search(&self, haystack: &[u8], file_id: FileId) -> anyhow::Result<bool> {
+    pub fn search(&self, haystack: &[u8], file_id: FileId) -> Todos {
         let mut loc_cache = LocCache::new();
 
         let todos = self.re.find_iter(haystack).filter_map(|mat| {
@@ -150,17 +154,9 @@ impl Stalkr {
             Some(todo)
         }).collect::<Vec<_>>();
 
-        if todos.is_empty() {
-            return Ok(false)
-        }
-
         let todos = util::vec_into_boxed_slice_norealloc(todos);
 
-        self.prompter_tx.send(Prompt {
-            todos
-        }).expect("could not send todos to issue worker");
-
-        Ok(true)
+        todos
     }
 
     #[inline]

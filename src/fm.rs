@@ -16,8 +16,6 @@ type FileRefMut<'a> = RefMut<'a, FileId, StalkrFile>;
 
 pub type FilePathGuard<'a> = MappedRef<'a, FileId, StalkrFile, String>;
 
-type BufGuard<'a>  = MappedRef<'a, FileId, StalkrFile, Vec<u8>>;
-type MmapGuard<'a> = MappedRef<'a, FileId, StalkrFile, MmapMut>;
 type MmapGuardMut<'a> = MappedRefMut<'a, FileId, StalkrFile, MmapMut>;
 
 #[derive(Eq, Hash, Copy, Clone, Debug, PartialEq)]
@@ -52,7 +50,6 @@ impl StalkrFileContents {
 #[derive(Debug)]
 pub struct StalkrFile {
     // user path (not canonicalized)
-    #[allow(unused)]
     pub upath: String,
 
     pub meta: fs::Metadata,
@@ -79,14 +76,47 @@ impl StalkrFile {
     pub fn read_contents_unchecked_mut(&mut self) -> &mut StalkrFileContents {
         unsafe { self.contents.as_mut().unwrap_unchecked() }
     }
+
+    pub fn read_file_to_vec(&mut self) -> io::Result<&[u8]> {
+        let file_size = self.meta.len() as usize;
+
+        match self.contents {
+            Some(StalkrFileContents::Buf(_)) => {}
+            Some(StalkrFileContents::Mmap(_)) => panic!("`read_file_to_end` called on a mmapped file"),
+
+            None => {
+                let mut buf = Vec::with_capacity(file_size);
+                self.handle.read_to_end(&mut buf)?;
+                self.contents = Some(StalkrFileContents::Buf(buf))
+            }
+        }
+
+        Ok(&self.read_contents_unchecked().as_buf_unchecked())
+    }
+
+    pub fn mmap_file(&mut self) -> io::Result<&MmapMut> {
+        if let Some(StalkrFileContents::Mmap(_)) = &self.contents {
+            return Ok(self.read_contents_unchecked().as_mmap_unchecked())
+        }
+
+        if self.contents.is_none() {
+            let mut opts = MmapOptions::new();
+            opts.len(self.meta.len() as usize);
+
+            let mmap = unsafe { opts.map_mut(&self.handle)? };
+
+            self.contents = Some(StalkrFileContents::Mmap(mmap))
+        }
+
+        Ok(self.read_contents_unchecked().as_mmap_unchecked())
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct FileManager {
     pub files: FxDashMap<FileId, StalkrFile>,
 
-    // canonicalized_file_path -> file_id
-    file_id_map: FxDashMap<String, FileId>,
+    file_id: AtomicU32
 }
 
 impl FileManager {
@@ -111,11 +141,6 @@ impl FileManager {
     #[inline(always)]
     pub fn add_tag_to_file(&self, file_id: FileId, tag: Tag) {
         self.get_file_unchecked_mut(file_id).tags.push(tag)
-    }
-
-    #[inline(always)]
-    pub fn drop_entry(&self, file_id: FileId) {
-        self.files.remove(&file_id);
     }
 
     pub fn get_mmap_or_remmap_file_mut(
@@ -144,76 +169,18 @@ impl FileManager {
         Ok(entry.map(|f| f.read_contents_unchecked_mut().as_mmap_unchecked_mut()))
     }
 
-    pub fn read_file_to_end(&self, file_id: FileId) -> io::Result<BufGuard<'_>> {
-        let mut entry = self.get_file_unchecked_mut(file_id);
-
-        let file_size = entry.meta.len() as usize;
-
-        #[inline]
-        fn get_buf(e: FileRefMut<'_>) -> BufGuard<'_> {
-            e.downgrade().map(|f| f.read_contents_unchecked().as_buf_unchecked())
-        }
-
-        match entry.contents {
-            Some(StalkrFileContents::Buf(_)) => {}
-            Some(StalkrFileContents::Mmap(_)) => panic!("`read_file_to_end` called on a mmapped file"),
-
-            None => {
-                let mut buf = Vec::with_capacity(file_size);
-                entry.handle.read_to_end(&mut buf)?;
-                entry.contents = Some(StalkrFileContents::Buf(buf))
-            }
-        }
-
-        Ok(get_buf(entry))
-    }
-
-    pub fn mmap_file(&self, file_id: FileId) -> io::Result<MmapGuard<'_>> {
-        let mut entry = self.get_file_unchecked_mut(file_id);
-
-        if let Some(StalkrFileContents::Mmap(_)) = &entry.contents {
-            return Ok(entry.downgrade().map(|f| f.read_contents_unchecked().as_mmap_unchecked()))
-        }
-
-        if entry.contents.is_none() {
-            let mut opts = MmapOptions::new();
-            opts.len(entry.meta.len() as usize);
-
-            let mmap = unsafe { opts.map_mut(&entry.handle)? };
-
-            entry.contents = Some(StalkrFileContents::Mmap(mmap));
-        }
-
-        Ok(entry.downgrade().map(|f| f.read_contents_unchecked().as_mmap_unchecked()))
+    #[inline]
+    pub fn next_file_id(&self) -> FileId {
+        let id = self.file_id.fetch_add(1, Ordering::SeqCst);
+        FileId(id)
     }
 
     #[inline]
-    pub fn register_file(
+    pub fn register_stalkr_file(
         &self,
-        uncanonicalized: &str,
-        file: StalkrFile
-    ) -> FileId {
-        let Ok(canonicalized) = fs::canonicalize(uncanonicalized) else {
-            panic!("could not canonicalize file path: {uncanonicalized}");
-        };
-
-        let s = canonicalized.to_string_lossy().into_owned();
-
-        if let Some(file_id) = self.file_id_map.get(&s) {
-            return *file_id
-        }
-
-        let file_id = self.new_file_id(s);
+        file: StalkrFile,
+        file_id: FileId
+    ) {
         self.files.insert(file_id, file);
-
-        file_id
-    }
-
-    #[inline(always)]
-    fn new_file_id(&self, canonicalized: String) -> FileId {
-        static CURR_MODULE_ID: AtomicU32 = AtomicU32::new(0);
-        let file_id = FileId(CURR_MODULE_ID.fetch_add(1, Ordering::SeqCst));
-        self.file_id_map.insert(canonicalized, file_id);
-        file_id
     }
 }
