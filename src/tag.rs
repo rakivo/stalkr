@@ -1,4 +1,5 @@
 use crate::todo::Todo;
+use crate::purge::Purges;
 use crate::config::Config;
 use crate::fm::{FileId, FileManager};
 
@@ -7,6 +8,11 @@ use std::{io, mem, fmt};
 
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc::UnboundedReceiver;
+
+pub enum InserterValue {
+    Inserting(FileId),
+    Purging(Purges)
+}
 
 #[derive(Debug)]
 pub struct Tag {
@@ -41,7 +47,7 @@ pub struct TagInserter {
 
 impl TagInserter {
     make_spawn!{
-        FileId,
+        InserterValue,
         #[inline]
         pub fn new(
             fm: Arc<FileManager>,
@@ -52,17 +58,31 @@ impl TagInserter {
         }
     }
 
-    pub async fn run(&self, mut tag_rx: UnboundedReceiver<FileId>) {
+    pub async fn run(&self, mut inserter_rx: UnboundedReceiver<InserterValue>) {
         let sem = Arc::new(Semaphore::new(self.max_inserter_concurrency));
 
-        while let Some(file_id) = tag_rx.recv().await {
+        while let Some(inserter_value) = inserter_rx.recv().await {
             let permit = sem.clone().acquire_owned().await.unwrap();
             let inserter = self.clone();
 
             tokio::task::spawn_blocking(move || {
-                if let Err(err) = inserter.insert_tags(file_id) {
-                    eprintln!{
-                        "[tag] failed to insert tags for file {file_id:?}: {err:#}"
+                match inserter_value {
+                    InserterValue::Inserting(file_id) => {
+                        if let Err(err) = inserter.insert_tags(file_id) {
+                            eprintln!{
+                                "[tag] failed to insert tags for file {file_id:?}: {err:#}"
+                            }
+                        }
+                    }
+
+                    InserterValue::Purging(purges) => {
+                        let file_id = purges.file_id;
+
+                        if let Err(err) = purges.apply(&inserter.fm) {
+                            eprintln!{
+                                "[tag] failed to purge todos for file {file_id:?}: {err:#}"
+                            }
+                        }
                     }
                 }
 
@@ -121,7 +141,7 @@ impl TagInserter {
 
             let msg = tag.commit_msg();
 
-            self.config.commit_changes(&file_path, &msg)?;
+            self.config.git_commit_changes(&file_path, &msg)?;
         }
 
         Ok(())

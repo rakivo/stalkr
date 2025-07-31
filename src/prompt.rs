@@ -1,20 +1,44 @@
 use crate::util;
 use crate::config::Config;
 use crate::fm::FileManager;
-use crate::todo::{Todos, Description};
+use crate::mode::ModeValue;
+use crate::todo::Description;
+use crate::issue::IssueValue;
+use crate::tag::InserterValue;
 
 use std::sync::Arc;
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 pub struct Prompt {
-    pub todos: Todos
+    pub mode_value: ModeValue
+}
+
+pub enum PrompterTx {
+    Issuer(UnboundedSender<IssueValue>),
+    Inserter(UnboundedSender<InserterValue>),
+}
+
+impl PrompterTx {
+    fn as_issuer_unchecked(&self) -> &UnboundedSender<IssueValue> {
+        match self {
+            Self::Issuer(i) => i,
+            _ => unreachable!()
+        }
+    }
+
+    fn as_inserter_unchecked(&self) -> &UnboundedSender<InserterValue> {
+        match self {
+            Self::Inserter(i) => i,
+            _ => unreachable!()
+        }
+    }
 }
 
 pub struct Prompter {
     pub fm: Arc<FileManager>,
     pub config: Arc<Config>,
-    pub issue_tx: UnboundedSender<Todos>,
+    pub tx: PrompterTx,
 }
 
 impl Prompter {
@@ -28,155 +52,205 @@ impl Prompter {
         pub fn new(
             fm: Arc<FileManager>,
             config: Arc<Config>,
-            issue_tx: UnboundedSender<Todos>,
+            tx: PrompterTx
         ) -> Self {
-            Self { fm, config, issue_tx }
+            Self { fm, config, tx }
         }
     }
 
     pub async fn run(&self, mut prompter_rx: UnboundedReceiver<Prompt>) {
-        while let Some(p) = prompter_rx.recv().await {
-            let Some(file_id) = p.todos.first().map(|t| t.loc.file_id()) else {
-                continue
-            };
+        let project_url      = self.config.get_project_url();
+        let selection_string = Self::get_selection_string();
 
-            let mut todos = p.todos.into_vec();
-
-            let project_url = self.config.get_project_url();
-
-            let selection_string = Self::get_selection_string();
-
-            let file_name = self.fm.get_file_path_unchecked(file_id);
-
-            let to_report = loop {
-                util::clear_screen();
-
-                println!("[detected project]: {project_url}\n");
-
-                println!("[todoʼs from]: {file_name}\n");
-
-                // build all prefixes and find max width to pad all titles
-                let prefixes = todos
-                    .iter()
-                    .enumerate()
-                    .map(|(i, todo)| format!{
-                        "{n}. [line {line}]:",
-                        n = i + 1,
-                        line = todo.loc.line_number()
-                    }).collect::<Vec<_>>();
-
-                let max_width = prefixes.iter().map(|p| p.len()).max().unwrap_or(0);
-
-                // print each line with padding
-                for (i, (todo, prefix)) in todos.iter().zip(prefixes).enumerate() {
-                    // how many spaces to add so that all titles line up
-                    let pad = max_width - prefix.len();
-
-                    // pad BEFORE the space between colon and title
-                    println!{
-                        "{prefix}{tab} {title}",
-                        tab = " ".repeat(pad),
-                        title = todo.title
+        while let Some(prompt) = prompter_rx.recv().await {
+            match prompt.mode_value {
+                ModeValue::Reporting(mut todos) => {
+                    let file_id = match todos.first().map(|t| t.loc.file_id()) {
+                        Some(id) => id,
+                        None => continue,
                     };
 
-                    if let Some(desc) = &todo.description {
-                        println!("   └── description:\n{d}", d = desc.display(9));
-                        if i < todos.len() - 1 { println!() }
-                    }
-                }
+                    let file_name = self.fm.get_file_path_unchecked(file_id);
 
-                println!();
+                    let to_report = loop {
+                        util::clear_screen();
 
-                let cmd = util::ask_input(&selection_string);
-                let cmd = cmd.trim();
+                        println!("[detected project]: {project_url}\n");
 
-                if cmd.eq_ignore_ascii_case(Self::SKIP_KEY) { break None }
-                if cmd.eq_ignore_ascii_case(Self::HELP_KEY) { Self::print_help(); continue }
+                        println!("[todoʼs from]: {file_name}\n");
 
-                // editing mode
-                if let Some(pos) = cmd.find(|c: char| !c.is_ascii_digit()) {
-                    let (num_str, flags) = cmd.split_at(pos);
+                        // build all prefixes and find max width to pad all titles
+                        let prefixes = todos
+                            .iter()
+                            .enumerate()
+                            .map(|(i, todo)| format!{
+                                "{n}. [line {line}]:",
+                                n = i + 1,
+                                line = todo.loc.line_number()
+                            }).collect::<Vec<_>>();
 
-                    if let Ok(idx) = num_str.parse::<usize>() {
-                        let i = idx.wrapping_sub(1);
+                        let max_width = prefixes.iter().map(|p| p.len()).max().unwrap_or(0);
 
-                        if i >= todos.len() {
-                            println!("invalid index.");
-                            continue
-                        }
+                        // print each line with padding
+                        for (i, (todo, prefix)) in todos.iter().zip(prefixes).enumerate() {
+                            // how many spaces to add so that all titles line up
+                            let pad = max_width - prefix.len();
 
-                        let todo = &mut todos[i];
-
-                        let mut any = false;
-
-                        let edit_flags = flags.trim();
-                        if edit_flags.contains('t') {
-                            let new_title = util::ask_input("enter new title:");
-                            let new_title = new_title.trim();
-
-                            todo.title = util::string_into_boxed_str_norealloc(
-                                new_title.to_owned()
-                            );
-
-                            any = true;
-                        }
-
-                        if edit_flags.contains('d') {
-                            let new_desc = util::ask_input(
-                                "enter new description (leave empty to remove):"
-                            );
-                            let new_desc = new_desc.trim();
-
-                            todo.description = if new_desc.is_empty() {
-                                None
-                            } else {
-                                Some(Description::from_str(new_desc))
+                            // pad BEFORE the space between colon and title
+                            println!{
+                                "{prefix}{tab} {title}",
+                                tab = " ".repeat(pad),
+                                title = todo.title
                             };
 
-                            any = true;
+                            if let Some(desc) = &todo.description {
+                                println!("   └── description:\n{d}", d = desc.display(9));
+                                if i < todos.len() - 1 { println!() }
+                            }
                         }
 
-                        if any {
-                            // re‑print updated list
-                            continue
+                        println!();
+
+                        let cmd = util::ask_input(&selection_string);
+                        let cmd = cmd.trim();
+
+                        if cmd.eq_ignore_ascii_case(Self::SKIP_KEY) { break None }
+                        if cmd.eq_ignore_ascii_case(Self::HELP_KEY) { Self::print_help(); continue }
+
+                        // editing mode
+                        if let Some(pos) = cmd.find(|c: char| !c.is_ascii_digit()) {
+                            let (num_str, flags) = cmd.split_at(pos);
+
+                            if let Ok(idx) = num_str.parse::<usize>() {
+                                let i = idx.wrapping_sub(1);
+
+                                if i >= todos.len() {
+                                    println!("invalid index.");
+                                    continue
+                                }
+
+                                let todo = &mut todos[i];
+
+                                let mut any = false;
+
+                                let edit_flags = flags.trim();
+                                if edit_flags.contains('t') {
+                                    let new_title = util::ask_input("enter new title:");
+                                    let new_title = new_title.trim();
+
+                                    todo.title = util::string_into_boxed_str_norealloc(
+                                        new_title.to_owned()
+                                    );
+
+                                    any = true;
+                                }
+
+                                if edit_flags.contains('d') {
+                                    let new_desc = util::ask_input(
+                                        "enter new description (leave empty to remove):"
+                                    );
+                                    let new_desc = new_desc.trim();
+
+                                    todo.description = if new_desc.is_empty() {
+                                        None
+                                    } else {
+                                        Some(Description::from_str(new_desc))
+                                    };
+
+                                    any = true;
+                                }
+
+                                if any {
+                                    continue
+                                }
+                            }
                         }
+
+                        // selection mode
+                        let to_report = if cmd.eq_ignore_ascii_case(Self::ALL_KEY) {
+                            todos
+                        } else {
+                            let mut report_indexes = cmd.split(',').filter_map(|s| {
+                                s.trim().parse::<usize>().ok().map(|n| n.wrapping_sub(1))
+                            }).filter(|i| *i < todos.len()).collect::<Vec<_>>();
+
+                            if report_indexes.is_empty() {
+                                break None
+                            }
+
+                            report_indexes.sort_unstable();
+                            report_indexes.dedup();
+
+                            let mut to_report = report_indexes.into_iter()
+                                .rev()
+                                .map(|index| todos.remove(index))
+                                .collect::<Vec<_>>();
+
+                            // restore original order
+                            to_report.reverse();
+                            to_report
+                        };
+
+                        break Some(to_report)
+                    };
+
+                    if let Some(to_report) = to_report {
+                        self.tx
+                            .as_issuer_unchecked()
+                            .send(ModeValue::Reporting(to_report))
+                            .expect("could not send todos to issue worker");
                     }
                 }
 
-                // selection mode
-                let to_report = if cmd.eq_ignore_ascii_case(Self::ALL_KEY) {
-                    todos
-                } else {
-                    let mut report_indexes = cmd.split(',').filter_map(|s| {
-                        s.trim().parse::<usize>().ok().map(|n| n.wrapping_sub(1))
-                    }).filter(|i| *i < todos.len()).collect::<Vec<_>>();
+                ModeValue::Purging(purges) => {
+                    // —— a simple preview-and-confirm for closed TODOs —— //
+                    let selection_string = format!(
+                        "[{a}] delete all   [{s}] skip   [{h}] help",
+                        a = Self::ALL_KEY,
+                        s = Self::SKIP_KEY,
+                        h = Self::HELP_KEY
+                    );
 
-                    if report_indexes.is_empty() {
-                        break None
+                    let to_delete = loop {
+                        util::clear_screen();
+                        println!("Found {} closed TODOs:", purges.len());
+                        for (i, purge) in purges.iter().enumerate() {
+                            // assuming Purge has `.loc` and `issue_number`
+                            println!(
+                                "{n}. {path}:{line}  // issue #{num}",
+                                n    = i + 1,
+                                path = self.fm.get_file_path_unchecked(purge.loc.file_id()),
+                                line = purge.loc.line_number(),
+                                num  = purge.issue_number
+                            );
+                        }
+                        println!("\n{}", selection_string);
+
+                        let cmd = util::ask_input("");
+                        let cmd = cmd.trim();
+
+                        if cmd.eq_ignore_ascii_case(Self::SKIP_KEY) {
+                            break None;
+                        }
+                        if cmd.eq_ignore_ascii_case(Self::HELP_KEY) {
+                            Self::print_help();
+                            continue;
+                        }
+                        if cmd.eq_ignore_ascii_case(Self::ALL_KEY) {
+                            break Some(purges)
+                        }
+
+                        // invalid input → retry
+                        println!("unrecognized command. type '{}' for help.", Self::HELP_KEY);
+                    };
+
+                    if let Some(list) = to_delete {
+                        self.tx
+                            .as_inserter_unchecked()
+                            .send(InserterValue::Purging(list))
+                            .expect("could not send purges to issue worker");
                     }
-
-                    report_indexes.sort_unstable();
-                    report_indexes.dedup();
-
-                    let mut to_report = report_indexes.into_iter()
-                        .rev()
-                        .map(|index| todos.remove(index))
-                        .collect::<Vec<_>>();
-
-                    // restore original order
-                    to_report.reverse();
-                    to_report
-                };
-
-                let to_report = util::vec_into_boxed_slice_norealloc(to_report);
-
-                break Some(to_report)
-            };
-
-            if let Some(to_report) = to_report {
-                self.issue_tx
-                    .send(to_report)
-                    .expect("could not send todos to issue worker");
+                }
             }
         }
     }

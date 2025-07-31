@@ -143,6 +143,7 @@ macro_rules! make_spawn {
         /// Spawn the issuing loop and return its JoinHandle.
         ///
         /// Takes *all* of `new`'s parameters, plus the `issue_rx` at the end.
+        #[allow(unused)]
         $vis fn spawn(
             $($arg_name : $arg_ty, ) *
             rx: tokio::sync::mpsc::UnboundedReceiver<$rx_inner_ty>

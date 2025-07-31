@@ -1,7 +1,10 @@
-use crate::tag::Tag;
+use crate::todo::Todo;
+use crate::prompt::Prompt;
 use crate::config::Config;
-use crate::todo::{Todo, Todos};
-use crate::fm::{FileId, FileManager};
+use crate::mode::ModeValue;
+use crate::fm::FileManager;
+use crate::purge::{Purge, Purges};
+use crate::tag::{Tag, InserterValue};
 
 use std::sync::Arc;
 use std::error::Error;
@@ -11,12 +14,14 @@ use serde_json::Value;
 use futures::{stream, StreamExt};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
+
+pub type IssueValue = ModeValue;
 
 #[derive(Clone)]
 pub struct Issuer {
     pub issues_api_url: Arc<str>,
-    pub inserter_tx: UnboundedSender<FileId>,
+    pub prompter_tx: UnboundedSender<Prompt>,
+    pub inserter_tx: UnboundedSender<InserterValue>,
     pub reported_count: Arc<AtomicUsize>,
     #[allow(unused)]
     pub config: Arc<Config>,
@@ -27,33 +32,22 @@ pub struct Issuer {
 
 impl Issuer {
     make_spawn!{
-        Todos,
+        IssueValue,
         pub fn new(
-            inserter_tx: UnboundedSender<FileId>,
+            prompter_tx: UnboundedSender<Prompt>,
+            inserter_tx: UnboundedSender<InserterValue>,
             config: Arc<Config>,
             fm: Arc<FileManager>,
             reported_count: Arc<AtomicUsize>,
             max_http_concurrency: usize,
         ) -> Self {
-            let headers = HeaderMap::from_iter([
-                (
-                    AUTHORIZATION,
-                    HeaderValue::from_str(&format!{
-                        "token {token}",
-                        token = config.gh_token
-                    }).unwrap()
-                ),
-            ]);
-
-            let rq_client = reqwest::Client::builder()
-                .user_agent("stalkr-todo-bot")
-                .default_headers(headers)
-                .build()
-                .unwrap();
+            let rq_client = config.make_github_client()
+                .expect("failed to build GitHub client");
 
             let issues_api_url = Arc::from(config.get_issues_api_url());
 
             Self {
+                prompter_tx,
                 issues_api_url,
                 inserter_tx,
                 reported_count,
@@ -65,24 +59,55 @@ impl Issuer {
         }
     }
 
-    pub async fn run(&self, issue_rx: UnboundedReceiver<Todos>) {
-        UnboundedReceiverStream::new(issue_rx).for_each_concurrent(self.max_http_concurrency, |todos| {
+    pub async fn run(&self, issue_rx: UnboundedReceiver<IssueValue>) {
+        UnboundedReceiverStream::new(issue_rx).for_each_concurrent(self.max_http_concurrency, |mode_value| {
             let issuer = self.clone();
             async move {
-                debug_assert!(!todos.is_empty());
+                debug_assert!(!mode_value.is_empty());
 
-                let file_id = todos[0].loc.file_id();
+                match mode_value {
+                    ModeValue::Reporting(todos) => {
+                        let file_id = todos[0].loc.file_id();
 
-                stream::iter(todos.into_iter()).for_each_concurrent(4, |todo| {
-                    let issuer = issuer.clone();
-                    async move {
-                        issuer.issue_todo(todo).await;
+                        stream::iter(todos.into_iter()).for_each_concurrent(4, |todo| {
+                            let issuer = issuer.clone();
+                            async move {
+                                issuer.issue_todo(todo).await;
+                            }
+                        }).await;
+
+                        self.inserter_tx
+                            .send(InserterValue::Inserting(file_id))
+                            .expect("[failed to send file id to inserting worker]");
                     }
-                }).await;
 
-                self.inserter_tx
-                    .send(file_id)
-                    .expect("[failed to send file id to inserting worker]");
+                    ModeValue::Purging(purges) => {
+                        let closed = stream::iter(purges.purges.into_iter())
+                            .map(|purge| {
+                                let issuer = self.clone();
+                                async move { issuer.check_if_purge_needed(purge).await }
+                            })
+                            .buffer_unordered(4)
+                            .filter_map(|opt| async move { opt })
+                            .collect::<Vec<_>>()
+                            .await;
+
+                        if closed.is_empty() {
+                            return
+                        }
+
+                        let purges = Purges {
+                            purges: closed,
+                            file_id: purges.file_id
+                        };
+
+                        let mode_value = ModeValue::Purging(purges);
+
+                        self.prompter_tx
+                            .send(Prompt { mode_value })
+                            .expect("[failed to send file id to inserting worker]");
+                    }
+                }
             }
         }).await;
     }
@@ -90,9 +115,11 @@ impl Issuer {
     async fn issue_todo(&self, todo: Todo) {
         let body = todo.as_json_value();
 
-        let rs = self.rq_client.post(
-            &*self.issues_api_url
-        ).json(&body).send().await;
+        let rs = self.rq_client
+            .post(&*self.issues_api_url)
+            .json(&body)
+            .send()
+            .await;
 
         match rs {
             Ok(r) if r.status().is_success() => {
@@ -134,6 +161,25 @@ impl Issuer {
                     src = s.source();
                 }
             }
+        }
+    }
+
+    async fn check_if_purge_needed(&self, purge: Purge) -> Option<Purge> {
+        let url = self.config.get_issue_api_url(purge.issue_number);
+
+        match self.rq_client.get(&url).send().await {
+            Ok(resp) => {
+                let json = resp.json::<Value>().await.ok()?;
+
+                let state = json.get("state").and_then(|s| s.as_str()).ok_or_else(|| {
+                    anyhow::anyhow!("could not parse issue state")
+                }).ok()?;
+
+                if state == "closed" { Some(purge) }
+                else { None }
+            }
+
+            Err(_) => None
         }
     }
 }

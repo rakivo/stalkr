@@ -2,13 +2,15 @@ use crate::util;
 use crate::loc::Loc;
 use crate::fm::FileId;
 use crate::todo::Todo;
+use crate::purge::Purge;
 use crate::prompt::Prompt;
-use crate::purge::{self, Purge};
-use crate::config::{Mode, Config};
+use crate::config::Config;
+use crate::issue::IssueValue;
+use crate::mode::{Mode, ModeValue};
 use crate::fm::{FileManager, StalkrFile};
 
+use std::str;
 use std::sync::Arc;
-use std::{str, hint};
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -21,57 +23,8 @@ use tokio::sync::mpsc::UnboundedSender;
 #[allow(clippy::identity_op)]
 const MMAP_THRESHOLD: usize = 1 * 1024 * 1024;
 
-pub enum ModeValue {
-    Reporting(Vec<Todo>),
-    Purging(Vec<Purge>),
-}
-
-impl ModeValue {
-    const RESERVE_CAP: usize = 4;
-
-    #[inline(always)]
-    fn new(mode: Mode) -> Self {
-        match mode {
-            Mode::Purging => Self::Purging(
-                Vec::with_capacity(Self::RESERVE_CAP)
-            ),
-
-            Mode::Reporting => Self::Reporting(
-                Vec::with_capacity(Self::RESERVE_CAP)
-            ),
-
-            _ => todo!()
-        }
-    }
-
-    #[inline(always)]
-    const fn is_empty(&self) -> bool {
-        match self {
-            Self::Purging(v)   => v.is_empty(),
-            Self::Reporting(v) => v.is_empty(),
-        }
-    }
-
-    #[track_caller]
-    #[inline(always)]
-    fn push_purge(&mut self, purge: Purge) {
-        match self {
-            Self::Purging(ps) => ps.push(purge),
-            _ => unsafe { hint::unreachable_unchecked() }
-        }
-    }
-
-    #[track_caller]
-    #[inline(always)]
-    fn push_todo(&mut self, todo: Todo) {
-        match self {
-            Self::Reporting(todos) => todos.push(todo),
-            _ => unsafe { hint::unreachable_unchecked() }
-        }
-    }
-}
-
 pub struct Stalkr {
+    issue_tx: UnboundedSender<IssueValue>,
     prompter_tx: UnboundedSender<Prompt>,
     config: Arc<Config>,
     fm: Arc<FileManager>,
@@ -82,10 +35,11 @@ impl Stalkr {
     pub fn spawn(
         fm: Arc<FileManager>,
         config: Arc<Config>,
+        issue_tx: UnboundedSender<IssueValue>,
         prompter_tx: UnboundedSender<Prompt>,
         found_count: Arc<AtomicUsize>
     ) -> JoinHandle<()> {
-        let me = Self::new(fm, config, prompter_tx, found_count);
+        let me = Self::new(fm, config, issue_tx, prompter_tx, found_count);
 
         tokio::task::spawn_blocking(move || {
             dir_rec::DirRec::new(&*me.config.cwd)
@@ -99,10 +53,11 @@ impl Stalkr {
     pub const fn new(
         fm: Arc<FileManager>,
         config: Arc<Config>,
+        issue_tx: UnboundedSender<IssueValue>,
         prompter_tx: UnboundedSender<Prompt>,
         found_count: Arc<AtomicUsize>
     ) -> Self {
-        Self { fm, config, prompter_tx, found_count }
+        Self { fm, issue_tx, config, prompter_tx, found_count }
     }
 
     pub fn stalk(&self, file_path: PathBuf) -> anyhow::Result<()> {
@@ -144,15 +99,16 @@ impl Stalkr {
         self.fm.register_stalkr_file(stalkr_file, file_id);
 
         match mode_value {
-            ModeValue::Reporting(todos) => {
-                self.prompter_tx.send(Prompt {
-                    todos: util::vec_into_boxed_slice_norealloc(todos)
-                }).expect("could not send todos to issue worker");
+            todos @ ModeValue::Reporting(_) => {
+                self.prompter_tx
+                    .send(Prompt { mode_value: todos })
+                    .expect("[could not send todos to prompter thread]");
             }
 
-            ModeValue::Purging(purges) => {
-                let purges = util::vec_into_boxed_slice_norealloc(purges);
-                purge::purge(file_id, purges, &self.config, &self.fm)?;
+            purges @ ModeValue::Purging(_) => {
+                self.issue_tx
+                    .send(purges)
+                    .expect("[could not send todos to issue worker]");
             }
         }
 
@@ -160,7 +116,7 @@ impl Stalkr {
     }
 
     pub fn search(&self, haystack: &[u8], file_id: FileId) -> ModeValue {
-        let mut mode_value = ModeValue::new(self.config.mode);
+        let mut mode_value = ModeValue::new(self.config.mode, file_id);
 
         let mut byte_offset = 0;
         let mut line_number = 1;
@@ -191,6 +147,8 @@ impl Stalkr {
 
             let content = trimmed[marker_len..].trim_start();
 
+            let loc = Loc(file_id, line_number - 1);
+
             let line_start = byte_offset - line.len();
 
             // ----------- purge mode ------------
@@ -207,6 +165,7 @@ impl Stalkr {
                         .expect("failed to parse issue number");
 
                     mode_value.push_purge(Purge {
+                        loc,
                         issue_number,
                         range: line_start..line_end
                     });
@@ -236,7 +195,7 @@ impl Stalkr {
             self.found_count.fetch_add(1, Ordering::SeqCst);
 
             let todo = Todo {
-                loc: Loc(file_id, line_number - 1),
+                loc,
                 tag_insertion_offset,
                 preview: util::string_into_boxed_str_norealloc(content.to_owned()),
                 title: util::string_into_boxed_str_norealloc(title.to_owned()),

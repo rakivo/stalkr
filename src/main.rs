@@ -18,6 +18,7 @@ mod fm;
 mod loc;
 mod tag;
 mod cli;
+mod mode;
 mod todo;
 mod issue;
 mod purge;
@@ -26,12 +27,13 @@ mod config;
 mod prompt;
 
 use cli::Cli;
+use mode::Mode;
 use stalk::Stalkr;
 use issue::Issuer;
 use config::Config;
 use fm::FileManager;
 use tag::TagInserter;
-use prompt::Prompter;
+use prompt::{Prompter, PrompterTx};
 
 use clap::Parser;
 use tokio::sync::mpsc::unbounded_channel;
@@ -41,11 +43,9 @@ async fn main() {
     let cli = Cli::parse();
 
     let config = match Config::new(cli) {
-        Ok(cfg) => cfg,
+        Ok(cfg) => Arc::new(cfg),
         Err(e) => panic!("[{e}]")
     };
-
-    let config = Arc::new(config);
 
     let num_cpus = thread::available_parallelism().unwrap().get();
 
@@ -82,18 +82,24 @@ async fn main() {
     let prompter_task = Prompter::spawn(
         fm.clone(),
         config.clone(),
-        issue_tx.clone(),
+        match config.mode {
+            Mode::Purging   => PrompterTx::Inserter(inserter_tx.clone()),
+            Mode::Reporting => PrompterTx::Issuer(issue_tx.clone()),
+            Mode::Listing   => todo!()
+        },
         prompter_rx
     );
 
     let stalkr_task = Stalkr::spawn(
         fm.clone(),
         config.clone(),
+        issue_tx.clone(),
         prompter_tx.clone(),
         found_count.clone()
     );
 
     let issue_task = Issuer::spawn(
+        prompter_tx.clone(),
         inserter_tx,
         config.clone(),
         fm.clone(),
@@ -112,11 +118,10 @@ async fn main() {
     stalkr_task.await.expect("[could not await parsing workers]");
 
     drop(issue_tx);
-    drop(prompter_tx);
-
-    prompter_task.await.expect("[could not await prompting thread]");
-
     issue_task.await.expect("[could not await issuing workers]");
+
+    drop(prompter_tx);
+    prompter_task.await.expect("[could not await prompting thread]");
 
     inserter_task.await.expect("[could not await tag inserting workers]");
 

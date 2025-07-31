@@ -1,4 +1,4 @@
-use crate::config::{self, Mode};
+use crate::mode::Mode;
 
 use std::path::PathBuf;
 
@@ -34,7 +34,7 @@ impl Cli {
     }
 
     #[inline(always)]
-    pub const fn mode(&self) -> config::Mode {
+    pub const fn mode(&self) -> Mode {
         match &self.command {
             Some(Commands::List { .. })  => Mode::Listing,
             Some(Commands::Purge { .. }) => Mode::Purging,

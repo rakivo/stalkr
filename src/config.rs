@@ -1,16 +1,11 @@
 use crate::util;
 use crate::cli::Cli;
+use crate::mode::Mode;
 
 use std::{fs, io, env};
 use std::path::PathBuf;
+use std::time::Duration;
 use std::process::Command;
-
-#[derive(Eq, Copy, Clone, Debug, PartialEq)]
-pub enum Mode {
-    Purging,
-    Listing,
-    Reporting
-}
 
 pub struct Config {
     pub owner    : Box<str>,
@@ -108,7 +103,30 @@ impl Config {
         None
     }
 
-    pub fn commit_changes(&self, path: &str, msg: &str) -> io::Result<()> {
+    pub fn make_github_client(&self) -> reqwest::Result<reqwest::Client> {
+        use reqwest::Client;
+        use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
+
+        Client::builder()
+            .pool_max_idle_per_host(8)
+            .user_agent("stalkr-todo-bot")
+            .pool_idle_timeout(Duration::from_secs(90))
+            .default_headers(HeaderMap::from_iter([
+                (
+                    AUTHORIZATION,
+                    HeaderValue::from_str(&format!{
+                        "token {token}",
+                        token = self.gh_token
+                    }).unwrap()
+                ),
+                (
+                    ACCEPT,
+                    "application/vnd.github.v3+json".parse().unwrap()
+                )
+            ])).build()
+    }
+
+    pub fn git_commit_changes(&self, path: &str, msg: &str) -> io::Result<()> {
         let status = Command::new("git")
             .arg("add")
             .arg(path)

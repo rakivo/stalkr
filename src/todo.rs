@@ -3,8 +3,6 @@ use crate::loc::Loc;
 
 use std::fmt;
 
-pub type Todos = Box<[Todo]>;
-
 #[derive(Debug)]
 pub struct Description {
     pub lines: Box<[Box<str>]>
