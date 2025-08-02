@@ -2,10 +2,9 @@
 // TODO(#4): Improve UX of TODO selection
 // TODO(#2): Commit tag-insertion to the origin
 
-use mimalloc::MiMalloc;
-
+#[cfg(not(feature = "no_mimalloc"))]
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::thread;
 use std::sync::Arc;
