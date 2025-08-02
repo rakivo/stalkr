@@ -2,37 +2,18 @@
 // TODO(#4): Improve UX of TODO selection
 // TODO(#2): Commit tag-insertion to the origin
 
-#[cfg(not(feature = "no_mimalloc"))]
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+use stalkr::cli::Cli;
+use stalkr::mode::Mode;
+use stalkr::stalk::Stalkr;
+use stalkr::issue::Issuer;
+use stalkr::config::Config;
+use stalkr::fm::FileManager;
+use stalkr::tag::TagInserter;
+use stalkr::prompt::{Prompter, PrompterTx};
 
 use std::thread;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-#[macro_use]
-mod util;
-
-mod fm;
-mod loc;
-mod tag;
-mod cli;
-mod mode;
-mod todo;
-mod issue;
-mod purge;
-mod stalk;
-mod config;
-mod prompt;
-
-use cli::Cli;
-use mode::Mode;
-use stalk::Stalkr;
-use issue::Issuer;
-use config::Config;
-use fm::FileManager;
-use tag::TagInserter;
-use prompt::{Prompter, PrompterTx};
 
 use clap::Parser;
 use tokio::sync::mpsc::unbounded_channel;
@@ -48,7 +29,7 @@ async fn main() {
 
     let num_cpus = thread::available_parallelism().unwrap().get();
 
-    let (rayon_threads, max_http_concurrency) = util::balance_concurrency(num_cpus);
+    let (rayon_threads, max_http_concurrency) = stalkr::util::balance_concurrency(num_cpus);
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(rayon_threads)
