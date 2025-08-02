@@ -1,4 +1,4 @@
-use std::{mem, slice};
+use std::{mem, slice, str};
 use std::io::{self, Write};
 
 #[inline]
