@@ -79,7 +79,7 @@ impl Issuer {
                         stream::iter(todos.into_iter()).for_each_concurrent(4, |todo| {
                             let issuer = issuer.clone();
                             async move {
-                                issuer.issue_todo(todo).await;
+                                issuer.post_todo(todo).await;
                             }
                         }).await;
 
@@ -121,7 +121,24 @@ impl Issuer {
         }).await;
     }
 
-    async fn issue_todo(&self, todo: Todo) {
+    async fn post_todo(&self, todo: Todo) {
+        if self.config.simulate_reporting {
+            // simulate network latency
+            use tokio::time::{sleep, Duration};
+
+            sleep(Duration::from_millis(150)).await;
+
+            self.reported_count.fetch_add(1, Ordering::SeqCst);
+
+            // fake issue number
+            let issue_number = rand::random::<u64>() % 10_000;
+            let file_id = todo.loc.file_id();
+            let tag = Tag { todo, issue_number };
+            self.fm.add_tag_to_file(file_id, tag);
+
+            return
+        }
+
         let body = todo.as_json_value();
 
         let rs = self.rq_client

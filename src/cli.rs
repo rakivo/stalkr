@@ -14,7 +14,7 @@ use clap::{Parser, Subcommand};
     override_usage = "stalkr [SUBCOMMAND] [OPTIONS]"
 )]
 pub struct Cli {
-    #[clap(short, long, default_value = ".")]
+    #[clap(short, long, default_value = ".", global = true)]
     pub directory: PathBuf,
 
     #[clap(subcommand)]
@@ -30,6 +30,14 @@ impl Cli {
             Some(Commands::Purge { remote, .. })  => remote,
             Some(Commands::Report { remote, .. }) => remote,
             _ => Self::DEFAULT_REMOTE
+        }
+    }
+
+    #[inline(always)]
+    pub fn simulate(&self) -> bool {
+        match &self.command {
+            Some(Commands::Report { simulate, .. }) => *simulate,
+            _ => false
         }
     }
 
@@ -65,11 +73,22 @@ pub enum Commands {
     #[clap(about = "Reports TODO comments as GitHub issues")]
     Report {
         /// Report all todo's
-        #[clap(long, short = 'y')]
+        #[clap(
+            long,
+            short = 'y',
+            help = "*Not actually implemented yet*"
+        )]
         yes: bool,
 
         #[clap(long, default_value = Cli::DEFAULT_REMOTE)]
         remote: String,
+
+        #[clap(
+            long,
+            default_value = "false",
+            help = "Don't actually report a TODO to an API and don't actually insert an issue tag"
+        )]
+        simulate: bool,
     },
 
     /// NOTE: Not implemented yet

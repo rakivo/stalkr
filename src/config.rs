@@ -15,6 +15,8 @@ pub struct Config {
     pub cwd      : Box<PathBuf>,
     pub mode     : Mode,
 
+    pub simulate_reporting: bool,
+
     pub found_closed_todo: AtomicBool,
 }
 
@@ -48,9 +50,19 @@ impl Config {
         let repo     = util::string_into_boxed_str_norealloc(repo);
         let gh_token = util::string_into_boxed_str_norealloc(gh_token);
 
+        let simulate_todo_post_rq = cli.simulate();
+
         let found_closed_todo = AtomicBool::new(false);
 
-        Ok(Self { owner, repo, gh_token, cwd, mode, found_closed_todo })
+        Ok(Self {
+            owner,
+            repo,
+            gh_token,
+            cwd,
+            mode,
+            found_closed_todo,
+            simulate_reporting: simulate_todo_post_rq
+        })
     }
 
     #[inline(always)]

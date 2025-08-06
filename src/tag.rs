@@ -127,21 +127,25 @@ impl TagInserter {
             let tag_len = insert_bytes.len();
 
             let actual_offset = byte_offset + shift;
-            mmap.copy_within(
-                actual_offset..orig_len + shift,
-                actual_offset + tag_len,
-            );
 
-            mmap[actual_offset..actual_offset + tag_len]
-                .copy_from_slice(insert_bytes);
+            if !self.config.simulate_reporting {
+                mmap.copy_within(
+                    actual_offset..orig_len + shift,
+                    actual_offset + tag_len,
+                );
+
+                mmap[actual_offset..actual_offset + tag_len]
+                    .copy_from_slice(insert_bytes);
+
+                mmap.flush()?;
+            }
 
             shift += tag_len;
 
-            mmap.flush()?;
-
-            let msg = tag.commit_msg();
-
-            self.config.git_commit_changes(&file_path, &msg)?;
+            if !self.config.simulate_reporting {
+                let msg = tag.commit_msg();
+                self.config.git_commit_changes(&file_path, &msg)?;
+            }
         }
 
         Ok(())
