@@ -11,3 +11,5 @@ $ cargo run --release
 ```
 
 > originally fork of [`tsoding/snitch`](https://github.com/tsoding/snitch)
+
+![](https://github.com/rakivo/stalkr/blob/master/assets/drawn-pipeline-diagram.png)
