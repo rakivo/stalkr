@@ -1,0 +1,23 @@
+use crate::todo::Todo;
+use crate::config::Config;
+use crate::issue::{Issue, Issuer};
+
+pub trait Api: ConfigApi + IssuerApi + Send + Sync {}
+
+pub trait ConfigApi {
+    fn get_api_token_env_var(&self) -> &str;
+
+    fn get_api_token(&self) -> anyhow::Result<String>;
+
+    fn get_project_url(&self, config: &Config) -> String;
+    fn get_issues_api_url(&self, config: &Config) -> String;
+    fn get_issue_api_url(&self, config: &Config, issue: &Issue) -> String;
+
+    fn make_client(&self, config: &Config) -> reqwest::Result<reqwest::Client>;
+}
+
+#[async_trait::async_trait]
+pub trait IssuerApi: Send + Sync {
+    async fn post_issue(&self, issuer: &Issuer, todo: Todo);
+    async fn check_if_issue_is_closed(&self, issuer: &Issuer, issue: &Issue) -> bool;
+}

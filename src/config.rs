@@ -1,19 +1,21 @@
 use crate::util;
 use crate::cli::Cli;
 use crate::mode::Mode;
+use crate::api::{Api, ConfigApi};
 
-use std::{fs, io, env};
+use std::{fs, io};
 use std::path::PathBuf;
-use std::time::Duration;
 use std::process::Command;
 use std::sync::atomic::AtomicBool;
 
 pub struct Config {
     pub owner    : Box<str>,
     pub repo     : Box<str>,
-    pub gh_token : Box<str>,
+    pub token    : Box<str>,
     pub cwd      : Box<PathBuf>,
     pub mode     : Mode,
+
+    pub api: Box<dyn Api>,
 
     pub simulate_reporting: bool,
 
@@ -22,11 +24,12 @@ pub struct Config {
 
 impl Config {
     pub fn new(cli: Cli) -> anyhow::Result::<Self> {
-        let Ok(gh_token) = env::var(
-            "STALKR_GITHUB_TOKEN"
-        ) else {
+        let api = Box::new(crate::gh::GithubApi);
+
+        let Ok(token) = api.get_api_token() else {
             return Err(anyhow::anyhow!{
-                "could not get STALKR_GITHUB_TOKEN env variable"
+                "could not get {token} env variable",
+                token = api.get_api_token_env_var()
             })
         };
 
@@ -48,45 +51,22 @@ impl Config {
 
         let owner    = util::string_into_boxed_str_norealloc(owner);
         let repo     = util::string_into_boxed_str_norealloc(repo);
-        let gh_token = util::string_into_boxed_str_norealloc(gh_token);
+        let token = util::string_into_boxed_str_norealloc(token);
 
-        let simulate_todo_post_rq = cli.simulate();
+        let simulate_reporting = cli.simulate();
 
         let found_closed_todo = AtomicBool::new(false);
 
         Ok(Self {
+            api,
             owner,
             repo,
-            gh_token,
+            token,
             cwd,
             mode,
             found_closed_todo,
-            simulate_reporting: simulate_todo_post_rq
+            simulate_reporting,
         })
-    }
-
-    #[inline(always)]
-    pub fn get_project_url(&self) -> String {
-        let Self { owner, repo, .. } = self;
-        format!{
-            "https://github.com/{owner}/{repo}"
-        }
-    }
-
-    #[inline(always)]
-    pub fn get_issues_api_url(&self) -> String {
-        let Self { owner, repo, .. } = self;
-        format!{
-            "https://api.github.com/repos/{owner}/{repo}/issues"
-        }
-    }
-
-    #[inline(always)]
-    pub fn get_issue_api_url(&self, issue_number: u64) -> String {
-        let Self { owner, repo, .. } = self;
-        format!{
-            "https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}"
-        }
     }
 
     pub fn get_git_origin_url(mut dir: PathBuf, remote: &str) -> Option<String> {
@@ -118,29 +98,6 @@ impl Config {
         }
 
         None
-    }
-
-    pub fn make_github_client(&self) -> reqwest::Result<reqwest::Client> {
-        use reqwest::Client;
-        use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
-
-        Client::builder()
-            .pool_max_idle_per_host(8)
-            .user_agent("stalkr-todo-bot")
-            .pool_idle_timeout(Duration::from_secs(90))
-            .default_headers(HeaderMap::from_iter([
-                (
-                    AUTHORIZATION,
-                    HeaderValue::from_str(&format!{
-                        "token {token}",
-                        token = self.gh_token
-                    }).unwrap()
-                ),
-                (
-                    ACCEPT,
-                    "application/vnd.github.v3+json".parse().unwrap()
-                )
-            ])).build()
     }
 
     pub fn git_commit_changes(&self, path: &str, msg: &str) -> io::Result<()> {

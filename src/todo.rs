@@ -10,6 +10,7 @@ pub struct Description {
 
 impl Description {
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         let lines = s.lines().map(|l| {
             util::string_into_boxed_str_norealloc(l.trim().to_owned())

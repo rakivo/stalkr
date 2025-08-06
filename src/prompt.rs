@@ -59,7 +59,7 @@ impl Prompter {
     }
 
     pub async fn run(&self, mut prompter_rx: UnboundedReceiver<Prompt>) {
-        let project_url      = self.config.get_project_url();
+        let project_url      = self.config.api.get_project_url(&self.config);
         let selection_string = Self::get_selection_string();
 
         while let Some(prompt) = prompter_rx.recv().await {
