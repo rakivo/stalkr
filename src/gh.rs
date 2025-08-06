@@ -1,8 +1,8 @@
 use crate::tag::Tag;
+use crate::api::Api;
 use crate::todo::Todo;
 use crate::config::Config;
 use crate::issue::{Issue, Issuer};
-use crate::api::{Api, ConfigApi, IssuerApi};
 
 use std::env;
 use std::error::Error;
@@ -13,9 +13,8 @@ use serde_json::Value;
 
 pub struct GithubApi;
 
-impl Api for GithubApi {}
-
-impl ConfigApi for GithubApi {
+#[async_trait::async_trait]
+impl Api for GithubApi {
     #[inline(always)]
     fn get_api_token_env_var(&self) -> &str {
         "STALKR_GITHUB_TOKEN"
@@ -74,10 +73,7 @@ impl ConfigApi for GithubApi {
                 )
             ])).build()
     }
-}
 
-#[async_trait::async_trait]
-impl IssuerApi for GithubApi {
     async fn post_issue(&self, issuer: &Issuer, todo: Todo) {
         let body = todo.as_json_value();
 

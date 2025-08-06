@@ -1,7 +1,7 @@
 use crate::util;
 use crate::cli::Cli;
+use crate::api::Api;
 use crate::mode::Mode;
-use crate::api::{Api, ConfigApi};
 
 use std::{fs, io};
 use std::path::PathBuf;
@@ -9,17 +9,18 @@ use std::process::Command;
 use std::sync::atomic::AtomicBool;
 
 pub struct Config {
-    pub owner    : Box<str>,
-    pub repo     : Box<str>,
-    pub token    : Box<str>,
-    pub cwd      : Box<PathBuf>,
-    pub mode     : Mode,
+    pub owner : Box<str>,
+    pub repo  : Box<str>,
+    pub token : Box<str>,
+    pub cwd   : Box<PathBuf>,
+
+    pub mode: Mode,
 
     pub api: Box<dyn Api>,
 
     pub simulate_reporting: bool,
 
-    pub found_closed_todo: AtomicBool,
+    pub found_closed_todo: AtomicBool
 }
 
 impl Config {
@@ -49,8 +50,8 @@ impl Config {
 
         let mode = cli.mode();
 
-        let owner    = util::string_into_boxed_str_norealloc(owner);
-        let repo     = util::string_into_boxed_str_norealloc(repo);
+        let owner = util::string_into_boxed_str_norealloc(owner);
+        let repo  = util::string_into_boxed_str_norealloc(repo);
         let token = util::string_into_boxed_str_norealloc(token);
 
         let simulate_reporting = cli.simulate();
