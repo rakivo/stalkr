@@ -1,4 +1,5 @@
 // TODO(#23): Implement purging
+// TODO(#26): Abstract away issue's API to a trait
 // TODO(#25): Support for inline todo's
 // TODO(#4): Improve UX of TODO selection
 // TODO(#2): Commit tag-insertion to the origin
