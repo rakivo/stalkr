@@ -138,14 +138,12 @@ impl TagInserter {
                     .copy_from_slice(insert_bytes);
 
                 mmap.flush()?;
-            }
 
-            shift += tag_len;
-
-            if !self.config.simulate_reporting {
                 let msg = tag.commit_msg();
                 self.config.git_commit_changes(&file_path, &msg)?;
             }
+
+            shift += tag_len;
         }
 
         Ok(())
