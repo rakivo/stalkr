@@ -3,6 +3,7 @@ use crate::fm::{FileId, FileManager};
 
 use std::fs::OpenOptions;
 use std::ops::{Range, Deref, DerefMut};
+use std::sync::atomic::{Ordering, AtomicUsize};
 
 pub struct Purge {
     pub loc: Loc,
@@ -33,7 +34,11 @@ impl Purges {
         Self { file_id, purges: Vec::with_capacity(n) }
     }
 
-    pub fn apply(mut self, fm: &FileManager) -> anyhow::Result<()> {
+    pub fn apply(
+        mut self,
+        processed_count: &AtomicUsize,
+        fm: &FileManager
+    ) -> anyhow::Result<()> {
         if self.is_empty() {
             return Ok(())
         }
@@ -61,6 +66,8 @@ impl Purges {
 
             // slide the tail block down on top of the hole
             mmap.copy_within(end..end + tail_len, start);
+
+            processed_count.fetch_add(1, Ordering::SeqCst);
 
             // reduce the effective length
             new_len -= len;

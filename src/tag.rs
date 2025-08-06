@@ -5,6 +5,7 @@ use crate::fm::{FileId, FileManager};
 
 use std::sync::Arc;
 use std::{io, mem, fmt};
+use std::sync::atomic::AtomicUsize;
 
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -42,6 +43,7 @@ impl Tag {
 pub struct TagInserter {
     fm: Arc<FileManager>,
     config: Arc<Config>,
+    processed_count: Arc<AtomicUsize>,
     max_inserter_concurrency: usize,
 }
 
@@ -52,9 +54,10 @@ impl TagInserter {
         pub fn new(
             fm: Arc<FileManager>,
             config: Arc<Config>,
+            processed_count: Arc<AtomicUsize>,
             max_inserter_concurrency: usize
         ) -> Self {
-            Self { fm, config, max_inserter_concurrency }
+            Self { fm, config, processed_count, max_inserter_concurrency }
         }
     }
 
@@ -78,7 +81,10 @@ impl TagInserter {
                     InserterValue::Purging(purges) => {
                         let file_id = purges.file_id;
 
-                        if let Err(err) = purges.apply(&inserter.fm) {
+                        if let Err(err) = purges.apply(
+                            &inserter.processed_count,
+                            &inserter.fm
+                        ) {
                             eprintln!{
                                 "[tag] failed to purge todos for file {file_id:?}: {err:#}"
                             }
