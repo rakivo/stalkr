@@ -18,10 +18,15 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 pub type IssueValue = ModeValue;
 
 #[derive(Clone)]
+pub enum IssuerTx {
+    Prompter(UnboundedSender<Prompt>),
+    Inserter(UnboundedSender<InserterValue>),
+}
+
+#[derive(Clone)]
 pub struct Issuer {
     pub issues_api_url: Arc<str>,
-    pub prompter_tx: UnboundedSender<Prompt>,
-    pub inserter_tx: UnboundedSender<InserterValue>,
+    pub issuer_tx: IssuerTx,
     pub reported_count: Arc<AtomicUsize>,
     #[allow(unused)]
     pub config: Arc<Config>,
@@ -34,8 +39,7 @@ impl Issuer {
     make_spawn!{
         IssueValue,
         pub fn new(
-            prompter_tx: UnboundedSender<Prompt>,
-            inserter_tx: UnboundedSender<InserterValue>,
+            issuer_tx: IssuerTx,
             config: Arc<Config>,
             fm: Arc<FileManager>,
             reported_count: Arc<AtomicUsize>,
@@ -47,9 +51,8 @@ impl Issuer {
             let issues_api_url = Arc::from(config.get_issues_api_url());
 
             Self {
-                prompter_tx,
+                issuer_tx,
                 issues_api_url,
-                inserter_tx,
                 reported_count,
                 config,
                 fm,
@@ -65,8 +68,8 @@ impl Issuer {
             async move {
                 debug_assert!(!mode_value.is_empty());
 
-                match mode_value {
-                    ModeValue::Reporting(todos) => {
+                match (mode_value, &issuer.issuer_tx) {
+                    (ModeValue::Reporting(todos), IssuerTx::Inserter(inserter_tx)) => {
                         let file_id = todos[0].loc.file_id();
 
                         stream::iter(todos.into_iter()).for_each_concurrent(4, |todo| {
@@ -76,12 +79,12 @@ impl Issuer {
                             }
                         }).await;
 
-                        self.inserter_tx
+                        inserter_tx
                             .send(InserterValue::Inserting(file_id))
                             .expect("[failed to send file id to inserting worker]");
                     }
 
-                    ModeValue::Purging(purges) => {
+                    (ModeValue::Purging(purges), IssuerTx::Prompter(prompter_tx)) => {
                         let closed = stream::iter(purges.purges.into_iter())
                             .map(|purge| {
                                 let issuer = self.clone();
@@ -103,10 +106,12 @@ impl Issuer {
 
                         let mode_value = ModeValue::Purging(purges);
 
-                        self.prompter_tx
+                        prompter_tx
                             .send(Prompt { mode_value })
                             .expect("[failed to send file id to inserting worker]");
                     }
+
+                    _ => unreachable!("unreachable tx-value combination")
                 }
             }
         }).await;

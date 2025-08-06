@@ -23,9 +23,13 @@ use tokio::sync::mpsc::UnboundedSender;
 #[allow(clippy::identity_op)]
 const MMAP_THRESHOLD: usize = 1 * 1024 * 1024;
 
+pub enum StalkrTx {
+    Issuer(UnboundedSender<IssueValue>),
+    Prompter(UnboundedSender<Prompt>),
+}
+
 pub struct Stalkr {
-    issue_tx: UnboundedSender<IssueValue>,
-    prompter_tx: UnboundedSender<Prompt>,
+    stalkr_tx: StalkrTx,
     config: Arc<Config>,
     fm: Arc<FileManager>,
     found_count: Arc<AtomicUsize>
@@ -35,11 +39,10 @@ impl Stalkr {
     pub fn spawn(
         fm: Arc<FileManager>,
         config: Arc<Config>,
-        issue_tx: UnboundedSender<IssueValue>,
-        prompter_tx: UnboundedSender<Prompt>,
+        stalkr_tx: StalkrTx,
         found_count: Arc<AtomicUsize>
     ) -> JoinHandle<()> {
-        let me = Self::new(fm, config, issue_tx, prompter_tx, found_count);
+        let me = Self::new(fm, config, stalkr_tx, found_count);
 
         tokio::task::spawn_blocking(move || {
             dir_rec::DirRec::new(&*me.config.cwd)
@@ -53,11 +56,10 @@ impl Stalkr {
     pub const fn new(
         fm: Arc<FileManager>,
         config: Arc<Config>,
-        issue_tx: UnboundedSender<IssueValue>,
-        prompter_tx: UnboundedSender<Prompt>,
+        stalkr_tx: StalkrTx,
         found_count: Arc<AtomicUsize>
     ) -> Self {
-        Self { fm, issue_tx, config, prompter_tx, found_count }
+        Self { fm, stalkr_tx, config, found_count }
     }
 
     pub fn stalk(&self, file_path: PathBuf) -> anyhow::Result<()> {
@@ -98,17 +100,17 @@ impl Stalkr {
 
         self.fm.register_stalkr_file(stalkr_file, file_id);
 
-        match mode_value {
-            todos @ ModeValue::Reporting(_) => {
-                self.prompter_tx
-                    .send(Prompt { mode_value: todos })
-                    .expect("[could not send todos to prompter thread]");
+        match &self.stalkr_tx {
+            StalkrTx::Issuer(issuer_tx) => {
+                issuer_tx
+                    .send(mode_value)
+                    .expect("[could not send todos to issue worker]");
             }
 
-            purges @ ModeValue::Purging(_) => {
-                self.issue_tx
-                    .send(purges)
-                    .expect("[could not send todos to issue worker]");
+            StalkrTx::Prompter(prompter_tx) => {
+                prompter_tx
+                    .send(Prompt { mode_value })
+                    .expect("[could not send todos to prompter thread]");
             }
         }
 

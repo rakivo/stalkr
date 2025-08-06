@@ -4,11 +4,11 @@
 
 use stalkr::cli::Cli;
 use stalkr::mode::Mode;
-use stalkr::stalk::Stalkr;
-use stalkr::issue::Issuer;
 use stalkr::config::Config;
 use stalkr::fm::FileManager;
 use stalkr::tag::TagInserter;
+use stalkr::stalk::{Stalkr, StalkrTx};
+use stalkr::issue::{Issuer, IssuerTx};
 use stalkr::prompt::{Prompter, PrompterTx};
 
 use std::thread;
@@ -73,14 +73,20 @@ async fn main() {
     let stalkr_task = Stalkr::spawn(
         fm.clone(),
         config.clone(),
-        issue_tx.clone(),
-        prompter_tx.clone(),
+        match config.mode {
+            Mode::Purging   => StalkrTx::Issuer(issue_tx.clone()),
+            Mode::Reporting => StalkrTx::Prompter(prompter_tx.clone()),
+            Mode::Listing   => todo!()
+        },
         found_count.clone()
     );
 
     let issue_task = Issuer::spawn(
-        prompter_tx.clone(),
-        inserter_tx,
+        match config.mode {
+            Mode::Purging   => IssuerTx::Prompter(prompter_tx.clone()),
+            Mode::Reporting => IssuerTx::Inserter(inserter_tx.clone()),
+            Mode::Listing   => todo!()
+        },
         config.clone(),
         fm.clone(),
         reported_count.clone(),
@@ -103,6 +109,7 @@ async fn main() {
     drop(prompter_tx);
     prompter_task.await.expect("[could not await prompting thread]");
 
+    drop(inserter_tx);
     inserter_task.await.expect("[could not await tag inserting workers]");
 
     let found_count    = found_count.load(Ordering::SeqCst);
