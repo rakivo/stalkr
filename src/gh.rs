@@ -10,6 +10,7 @@ use std::time::Duration;
 use std::sync::atomic::Ordering;
 
 use serde_json::Value;
+use reqwest::StatusCode;
 
 pub struct GithubApi;
 
@@ -109,10 +110,18 @@ impl Api for GithubApi {
                 }
             }
 
+            Ok(r) if matches!{
+                r.status(),
+                StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+            } => eprintln!{
+                "[presumably rate limit hit: HTTP {status}]",
+                status = r.status()
+            },
+
             Ok(r) => eprintln!{
-                "[failed to create issue ({s}): {t:?}]",
+                "[failed to create issue ({s}): {t}]",
                 s = r.status(),
-                t = r.text().await
+                t = r.text().await.unwrap_or_default()
             },
 
             Err(e) => {
@@ -130,8 +139,8 @@ impl Api for GithubApi {
         let url = issuer.config.api.get_issue_api_url(&issuer.config, issue);
 
         match issuer.rq_client.get(&url).send().await {
-            Ok(resp) => {
-                let Ok(json) = resp.json::<Value>().await else {
+            Ok(r) if r.status().is_success() => {
+                let Ok(json) = r.json::<Value>().await else {
                     return false
                 };
 
@@ -149,7 +158,18 @@ impl Api for GithubApi {
                 }
             }
 
-            Err(_) => false
+            Ok(r) if matches!{
+                r.status(),
+                StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+            } => {
+                // TODO: A mechanism to stop execution
+                eprintln!{
+                    "[presumably rate limit hit: HTTP {status}]",
+                    status = r.status()
+                }; false
+            }
+
+            _ => false
         }
     }
 }
