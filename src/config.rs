@@ -6,13 +6,16 @@ use std::{fs, io, env};
 use std::path::PathBuf;
 use std::time::Duration;
 use std::process::Command;
+use std::sync::atomic::AtomicBool;
 
 pub struct Config {
     pub owner    : Box<str>,
     pub repo     : Box<str>,
     pub gh_token : Box<str>,
     pub cwd      : Box<PathBuf>,
-    pub mode     : Mode
+    pub mode     : Mode,
+
+    pub found_closed_todo: AtomicBool,
 }
 
 impl Config {
@@ -45,7 +48,9 @@ impl Config {
         let repo     = util::string_into_boxed_str_norealloc(repo);
         let gh_token = util::string_into_boxed_str_norealloc(gh_token);
 
-        Ok(Self { owner, repo, gh_token, cwd, mode })
+        let found_closed_todo = AtomicBool::new(false);
+
+        Ok(Self { owner, repo, gh_token, cwd, mode, found_closed_todo })
     }
 
     #[inline(always)]

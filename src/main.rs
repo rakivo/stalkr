@@ -101,16 +101,24 @@ async fn main() {
         inserter_rx
     );
 
-    stalkr_task.await.expect("[could not await parsing workers]");
-
+    // ---------------------- drop all senders ----------------------
+    // Drop all senders so receivers see EOF as soon as possible.
     drop(issue_tx);
-    issue_task.await.expect("[could not await issuing workers]");
-
     drop(prompter_tx);
-    prompter_task.await.expect("[could not await prompting thread]");
-
     drop(inserter_tx);
-    inserter_task.await.expect("[could not await tag inserting workers]");
+
+    // ---------------------- await all tasks in parallel ----------------------
+    let (stalkr_res, issue_res, prompter_res, inserter_res) = tokio::join!(
+        stalkr_task,
+        issue_task,
+        prompter_task,
+        inserter_task
+    );
+
+    stalkr_res.expect("[could not await parsing workers]");
+    issue_res.expect("[could not await issuing workers]");
+    prompter_res.expect("[could not await prompting thread]");
+    inserter_res.expect("[could not await tag inserting workers]");
 
     let found_count    = found_count.load(Ordering::SeqCst);
     let reported_count = reported_count.load(Ordering::SeqCst);

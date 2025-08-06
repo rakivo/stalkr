@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::{mem, slice, str};
 use std::io::{self, Write};
 
@@ -123,6 +124,56 @@ pub fn parse_owner_repo(url: &str) -> Option<(String, String)> {
     }
 
     Some((owner, repo))
+}
+
+pub fn truncate_path(path: &str, line_number: u32, max_len: usize) -> Cow<str> {
+    let line_number_len = line_number.to_string().len() + 1; // ':'
+
+    let available_for_path = max_len.saturating_sub(line_number_len);
+
+    if path.len() <= available_for_path {
+        return path.into()
+    }
+
+    // try to keep the filename and some parent directories
+    let parts = path.split('/').collect::<Vec<_>>();
+    if parts.len() <= 1 {
+        return format!(
+            "...{p}",
+            p = &path[path.len().saturating_sub(available_for_path - 3)..]
+        ).into();
+    }
+
+    let Some(filename) = parts.last() else {
+        return path.into();
+    };
+
+    let mut remaining_len = available_for_path - 3; // account for "..."
+
+    // always include the filename
+    if filename.len() > remaining_len {
+        return format!(
+            "...{p}",
+            p = &filename[filename.len().saturating_sub(remaining_len)..]
+        ).into();
+    }
+
+    let mut ret = String::from("...");
+    ret.reserve(filename.len() + 1);
+    ret.push('/');
+    ret.push_str(filename);
+    remaining_len -= filename.len() + 1;
+
+    // add parent directories from right to left if they fit
+    for parent in parts.iter().rev().skip(1) {
+        if parent.len() + 1 > remaining_len {
+            break;
+        }
+        ret.insert_str(4, &format!("{parent}/")); // insert after ".../"
+        remaining_len -= parent.len() + 1;
+    }
+
+    ret.into()
 }
 
 macro_rules! make_spawn {

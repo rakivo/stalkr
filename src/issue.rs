@@ -1,3 +1,4 @@
+use crate::util;
 use crate::todo::Todo;
 use crate::prompt::Prompt;
 use crate::config::Config;
@@ -36,6 +37,9 @@ pub struct Issuer {
 }
 
 impl Issuer {
+    const MAX_PATH_LEN  : usize = 40; // path + line number + dots should not exceed this
+    const MAX_TOTAL_LEN : usize = Self::MAX_PATH_LEN + 13; // total length before "is closed.." starts
+
     make_spawn!{
         IssueValue,
         pub fn new(
@@ -170,6 +174,31 @@ impl Issuer {
     }
 
     async fn check_if_purge_needed(&self, purge: Purge) -> Option<Purge> {
+        if !self.config.found_closed_todo.load(Ordering::SeqCst) {
+            let line_number = purge.loc.line_number();
+            let file_path = self.fm.get_file_path_unchecked(purge.loc.file_id());
+            let truncated_path = util::truncate_path(
+                &file_path,
+                line_number,
+                Self::MAX_PATH_LEN
+            );
+
+            let path_with_line = format!("{truncated_path}:{line_number}");
+            let path_dots_needed = Self::MAX_PATH_LEN.saturating_sub(path_with_line.len());
+            let path_dots = ".".repeat(path_dots_needed);
+
+            let issue_str = format!("(issue #{x})", x = purge.issue_number);
+            let issue_dots_needed = 15usize.saturating_sub(issue_str.len());
+            let issue_dots = ".".repeat(issue_dots_needed);
+
+            let prefix = format!("{path_with_line}{path_dots}{issue_str}{issue_dots}");
+
+            // dots after issue to align "is closed.."
+            let dots_after_issue = ".".repeat(Self::MAX_TOTAL_LEN.saturating_sub(prefix.len()));
+
+            println!("[checking if TODO at {prefix}{dots_after_issue}is closed..]");
+        }
+
         let url = self.config.get_issue_api_url(purge.issue_number);
 
         match self.rq_client.get(&url).send().await {
@@ -180,8 +209,12 @@ impl Issuer {
                     anyhow::anyhow!("could not parse issue state")
                 }).ok()?;
 
-                if state == "closed" { Some(purge) }
-                else { None }
+                if state == "closed" {
+                    self.config.found_closed_todo.store(true, Ordering::SeqCst);
+                    Some(purge)
+                } else {
+                    None
+                }
             }
 
             Err(_) => None
