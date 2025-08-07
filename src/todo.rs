@@ -92,14 +92,14 @@ impl Todo {
     fn strip_todo_parens(s: &str) -> Option<&str> {
         let bytes = s.as_bytes();
         if bytes.first() != Some(&b'(') {
-            return None;
+            return None
         }
 
-        // Find closing ')' that ends the TODO(...)
+        // find closing ')' that ends the TODO(...)
         if let Some(end_paren) = memchr::memchr(b')', &bytes[1..]) {
             let after_paren = &s[end_paren + 2..]; // +1 for offset, +1 for ')'
-            if after_paren.starts_with(':') {
-                return Some(after_paren[1..].trim_start()); // skip ':'
+            if let Some(stripped) = after_paren.strip_prefix(':') {
+                return Some(stripped.trim_start()) // skip ':'
             }
         }
 

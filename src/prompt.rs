@@ -146,7 +146,7 @@ impl Prompter {
 
                         // selection mode
                         let mut report_indexes = Self::get_indexes_from_comma_separated(
-                            &cmd,
+                            cmd,
                             todos.len()
                         );
 
@@ -204,7 +204,7 @@ impl Prompter {
                         if cmd.eq_ignore_ascii_case(Self::ALL_KEY)  { break Some(purges) }
 
                         let mut purge_indexes = Self::get_indexes_from_comma_separated(
-                            &cmd,
+                            cmd,
                             purges.len()
                         );
 
