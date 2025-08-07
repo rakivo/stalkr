@@ -17,10 +17,10 @@ pub struct Cli {
     #[clap(short, long, default_value = ".", global = true)]
     pub directory: PathBuf,
 
-    #[clap(long, global = true)]
+    #[clap(long, requires = "repository", global = true)]
     pub owner: Option<String>,
 
-    #[clap(long, global = true)]
+    #[clap(long, requires = "owner", global = true)]
     pub repository: Option<String>,
 
     #[clap(subcommand)]
