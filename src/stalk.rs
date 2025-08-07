@@ -1,4 +1,5 @@
 use crate::util;
+use crate::tag::Tag;
 use crate::loc::Loc;
 use crate::fm::FileId;
 use crate::todo::Todo;
@@ -88,10 +89,10 @@ impl Stalkr {
 
         let mode_value = if file_size < MMAP_THRESHOLD {
             let buf = stalkr_file.read_file_to_vec()?;
-            self.search(buf, file_id)
+            self.search(buf, path_str, file_id)
         } else {
             let mmap = stalkr_file.mmap_file()?;
-            self.search(&mmap[..], file_id)
+            self.search(&mmap[..], path_str, file_id)
         };
 
         if mode_value.is_empty() {
@@ -117,7 +118,7 @@ impl Stalkr {
         Ok(())
     }
 
-    pub fn search(&self, haystack: &[u8], file_id: FileId) -> ModeValue {
+    pub fn search(&self, haystack: &[u8], file_path: &str, file_id: FileId) -> ModeValue {
         let mut mode_value = ModeValue::new(self.config.mode, file_id);
 
         let mut byte_offset = 0;
@@ -153,39 +154,12 @@ impl Stalkr {
 
             let line_start = byte_offset - line.len();
 
-            // ----------- purge mode ------------
-            if self.config.mode == Mode::Purging {
-                if content.starts_with("TODO(#") {
-                    let skip = "TODO(#".len();
-
-                    // TODO(#24): Report error's with location in stalkr purging mode
-                    let closing_paren_pos = content[skip..].find(')')
-                        .expect("todo tag without `)`");
-
-                    let issue_number = content[skip..skip + closing_paren_pos]
-                        .parse::<u64>()
-                        .expect("failed to parse issue number");
-
-                    mode_value.push_purge(Purge {
-                        loc,
-                        issue_number,
-                        range: line_start..line_end
-                    });
-                }
-
-                continue
-            }
-
-            if !content.starts_with("TODO:") {
-                continue
-            }
-
             let ws_trimmed           = line_str.len() - trimmed.len();        // leading spaces removed
             let rest_after_mark      = &trimmed[marker_len..];                // before trimming spaces
             let ws_after_marker      = rest_after_mark.len() - content.len(); // spaces removed after marker
             let tag_insertion_offset = line_start + ws_trimmed + marker_len + ws_after_marker + "TODO".len();
 
-            let title = Todo::extract_todo_title(content);
+            let (title, is_tagged) = Todo::extract_todo_title(content);
             let description = {
                 let desc_start = byte_offset;
                 let rest = &haystack[desc_start..];
@@ -194,17 +168,48 @@ impl Stalkr {
                 })
             };
 
+            // TODO(#29): Properly increment found_count
             self.found_count.fetch_add(1, Ordering::SeqCst);
 
             let todo = Todo {
                 loc,
+                description,
                 tag_insertion_offset,
                 preview: util::string_into_boxed_str_norealloc(content.to_owned()),
                 title: util::string_into_boxed_str_norealloc(title.to_owned()),
-                description,
             };
 
-            mode_value.push_todo(todo);
+            if content.starts_with("TODO:") {
+                mode_value.push_todo(todo);
+            } else if is_tagged && self.config.mode == Mode::Purging {
+                let skip = "TODO(#".len();
+
+                // file_id is not yet registered, so use file_path instead
+                let display_loc = || loc.display_from_str(file_path);
+
+                let Some(closing_paren_pos) = content[skip..].find(')') else {
+                    eprintln!{
+                        "[{loc}: error: todo tag without closing paren]",
+                        loc = display_loc()
+                    };
+
+                    continue
+                };
+
+                let Ok(issue_number) = content[skip..skip + closing_paren_pos].parse::<u64>() else {
+                    eprintln!{
+                        "[{loc}: error: failed to parse issue number]",
+                        loc = display_loc()
+                    };
+
+                    continue
+                };
+
+                mode_value.push_purge(Purge {
+                    tag: Tag { todo, issue_number },
+                    range: line_start..line_end
+                });
+            }
         }
 
         mode_value
@@ -240,4 +245,3 @@ impl Stalkr {
         !is_bin
     }
 }
-
