@@ -1,8 +1,8 @@
+// TODO: Implement closing mode
 // TODO(#23): Implement purging
 // TODO(#28): Commit purging to the origin
 // TODO(#25): Support for inline todo's
 // TODO(#4): Improve UX of TODO selection
-// TODO(#2): Commit tag-insertion to the origin
 
 use stalkr::cli::Cli;
 use stalkr::mode::Mode;
