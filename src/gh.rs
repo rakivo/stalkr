@@ -162,7 +162,7 @@ impl Api for GithubApi {
                 r.status(),
                 StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
             } => {
-                // TODO: A mechanism to stop execution
+                // TODO(#27): A mechanism to stop execution
                 eprintln!{
                     "[presumably rate limit hit: HTTP {status}]",
                     status = r.status()
