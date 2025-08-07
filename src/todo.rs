@@ -62,13 +62,48 @@ impl Todo {
         })
     }
 
+    /// Returns: (todo's title, is todo tagged or not)
     #[inline]
-    pub fn extract_todo_title(h: &str) -> &str {
-        util::trim_comment_start(h)
-            .trim_start_matches("TODO:")
-            .trim()
-            .trim_end_matches("*/")
-            .trim()
+    pub fn extract_todo_title(h: &str) -> (&str, bool) {
+        let mut s = util::trim_comment_start(h).trim_start();
+        let mut is_tagged = false;
+
+        if let Some(rest) = s.strip_prefix("TODO") {
+            let rest = rest.trim_start();
+
+            if let Some(after_colon) = rest.strip_prefix(':') {
+                // e.g. "TODO:"
+                s = after_colon.trim_start();
+            } else if let Some(stripped) = Self::strip_todo_parens(rest) {
+                // e.g. "TODO(<...>):"
+                s = stripped;
+                is_tagged = true;
+            }
+        }
+
+        // trailing "*/"
+        s = s.trim_end_matches("*/").trim();
+
+        (s, is_tagged)
+    }
+
+    // Helper: parse TODO(<...>): and return what's after it
+    #[inline]
+    fn strip_todo_parens(s: &str) -> Option<&str> {
+        let bytes = s.as_bytes();
+        if bytes.first() != Some(&b'(') {
+            return None;
+        }
+
+        // Find closing ')' that ends the TODO(...)
+        if let Some(end_paren) = memchr::memchr(b')', &bytes[1..]) {
+            let after_paren = &s[end_paren + 2..]; // +1 for offset, +1 for ')'
+            if after_paren.starts_with(':') {
+                return Some(after_paren[1..].trim_start()); // skip ':'
+            }
+        }
+
+        None
     }
 
     #[inline]
