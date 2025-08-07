@@ -7,8 +7,9 @@ use std::sync::Arc;
 use std::{io, mem, fmt};
 use std::sync::atomic::{Ordering, AtomicUsize};
 
-use tokio::sync::Semaphore;
+use futures::StreamExt;
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 pub enum InserterValue {
     Inserting(FileId),
@@ -61,41 +62,40 @@ impl TagInserter {
         }
     }
 
-    pub async fn run(&self, mut inserter_rx: UnboundedReceiver<InserterValue>) {
-        let sem = Arc::new(Semaphore::new(self.max_inserter_concurrency));
+    pub async fn run(&self, inserter_rx: UnboundedReceiver<InserterValue>) {
+        let stream = UnboundedReceiverStream::new(inserter_rx);
 
-        while let Some(inserter_value) = inserter_rx.recv().await {
-            let permit = sem.clone().acquire_owned().await.unwrap();
+        stream.for_each_concurrent(self.max_inserter_concurrency, |inserter_value| {
             let inserter = self.clone();
 
-            tokio::task::spawn_blocking(move || {
-                match inserter_value {
-                    InserterValue::Inserting(file_id) => {
-                        if let Err(err) = inserter.insert_tags(file_id) {
-                            eprintln!{
-                                "[tag] failed to insert tags for file {file_id:?}: {err:#}"
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    match inserter_value {
+                        InserterValue::Inserting(file_id) => {
+                            if let Err(err) = inserter.insert_tags(file_id) {
+                                eprintln!{
+                                    "[tag] failed to insert tags for file {file_id:?}: {err:#}"
+                                }
+                            }
+                        }
+
+                        InserterValue::Purging(purges) => {
+                            let file_id = purges.file_id;
+
+                            if let Err(err) = purges.apply(
+                                &inserter.processed_count,
+                                &inserter.config,
+                                &inserter.fm
+                            ) {
+                                eprintln!{
+                                    "[tag] failed to purge todos for file {file_id:?}: {err:#}"
+                                }
                             }
                         }
                     }
-
-                    InserterValue::Purging(purges) => {
-                        let file_id = purges.file_id;
-
-                        if let Err(err) = purges.apply(
-                            &inserter.processed_count,
-                            &inserter.config,
-                            &inserter.fm
-                        ) {
-                            eprintln!{
-                                "[tag] failed to purge todos for file {file_id:?}: {err:#}"
-                            }
-                        }
-                    }
-                }
-
-                drop(permit);
-            });
-        }
+                }).await.unwrap();
+            }
+        }).await;
     }
 
     fn insert_tags(&self, file_id: FileId) -> io::Result<()> {
@@ -148,9 +148,6 @@ impl TagInserter {
             let msg = tag.commit_msg();
             self.config.git_commit_changes(&file_path, &msg)?;
 
-            // TODO(#31): Processed count bug
-            //   main thread does not wait till tag inserter ends it execution,
-            //   this leads to main thread prematurely printing the processed_count
             self.processed_count.fetch_add(1, Ordering::SeqCst);
 
             shift += tag_len;
