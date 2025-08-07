@@ -23,7 +23,7 @@ impl Api for GithubApi {
 
     #[inline(always)]
     fn get_api_token(&self) -> anyhow::Result<String> {
-        env::var(self.get_api_token_env_var()).map_err(|e| e.into())
+        env::var(self.get_api_token_env_var()).map_err(Into::into)
     }
 
     #[inline(always)]
@@ -89,7 +89,7 @@ impl Api for GithubApi {
                 let issue_number = r
                     .json::<Value>()
                     .await
-                    .map_err(|e| e.into())
+                    .map_err(Into::into)
                     .and_then(|j| {
                         j.get("number").and_then(|v| v.as_u64()).ok_or_else(|| {
                             anyhow::anyhow!("could not parse issue id")

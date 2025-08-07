@@ -62,6 +62,14 @@ impl Purges {
         let file_path = fm.get_file_path_unchecked(self.file_id).to_owned();
         let mut mmap = fm.get_mmap_or_remmap_file_mut(self.file_id, new_len)?;
 
+        let truncate_file = |new_len: usize| -> anyhow::Result<()> {
+            OpenOptions::new()
+                .write(true)
+                .open(&file_path)?
+                .set_len(new_len as _)
+                .map_err(Into::into)
+        };
+
         for ref purge @ Purge { ref range, .. } in self.purges.into_iter().rev() {
             let start = range.start;
             let end   = range.end;
@@ -82,7 +90,9 @@ impl Purges {
             // slide the tail block down on top of the hole
             mmap.copy_within(end..end + tail_len, start);
 
-            mmap.flush()?;
+            mmap.flush()?; // Still good for safety
+
+            truncate_file(new_len)?;
 
             let msg = purge.commit_msg();
             config.git_commit_changes(&file_path, &msg)?;
@@ -92,10 +102,7 @@ impl Purges {
 
         drop(mmap);
 
-        OpenOptions::new()
-            .write(true)
-            .open(&file_path)?
-            .set_len(new_len as _)?;
+        truncate_file(new_len)?;
 
         Ok(())
     }
