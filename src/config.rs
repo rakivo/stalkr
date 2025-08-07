@@ -36,14 +36,20 @@ impl Config {
 
         let remote = cli.remote();
 
-        let (owner, repo) = match Self::get_git_origin_url(
-            cli.directory.to_owned(),
-            remote
-        ).as_deref().and_then(util::parse_owner_repo) {
-            Some(x) => x,
-            None => return Err(anyhow::anyhow!{
-                "could not detect Github owner/repo"
-            })
+        let (owner, repo) = if let (Some(owner), Some(repo)) = (
+            &cli.owner, &cli.repository
+        ) {
+            (owner.to_owned(), repo.to_owned())
+        } else {
+            match Self::get_git_origin_url(
+                cli.directory.to_owned(),
+                remote
+            ).as_deref().and_then(util::parse_owner_repo) {
+                Some(x) => x,
+                None => return Err(anyhow::anyhow!{
+                    "could not detect Github owner/repo"
+                })
+            }
         };
 
         let cwd = Box::new(cli.directory.to_owned());
