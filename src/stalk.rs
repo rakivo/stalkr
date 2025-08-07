@@ -159,7 +159,11 @@ impl Stalkr {
             let ws_after_marker      = rest_after_mark.len() - content.len(); // spaces removed after marker
             let tag_insertion_offset = line_start + ws_trimmed + marker_len + ws_after_marker + "TODO".len();
 
+            let is_untagged = content.starts_with("TODO:");
             let (title, is_tagged) = Todo::extract_todo_title(content);
+
+            if !is_tagged && !is_untagged { continue }
+
             let description = {
                 let desc_start = byte_offset;
                 let rest = &haystack[desc_start..];
@@ -179,36 +183,42 @@ impl Stalkr {
                 title: util::string_into_boxed_str_norealloc(title.to_owned()),
             };
 
-            if content.starts_with("TODO:") {
-                mode_value.push_todo(todo);
-            } else if is_tagged && self.config.mode == Mode::Purging {
-                let skip = "TODO(#".len();
+            match self.config.mode {
+                Mode::Reporting => if is_untagged {
+                    mode_value.push_todo(todo);
+                }
 
-                // file_id is not yet registered, so use file_path instead
-                let display_loc = || loc.display_from_str(file_path);
+                Mode::Purging => if is_tagged {
+                    let skip = "TODO(#".len();
 
-                let Some(closing_paren_pos) = content[skip..].find(')') else {
-                    eprintln!{
-                        "[{loc}: error: todo tag without closing paren]",
-                        loc = display_loc()
+                    // file_id is not yet registered, so use file_path instead
+                    let display_loc = || loc.display_from_str(file_path);
+
+                    let Some(closing_paren_pos) = content[skip..].find(')') else {
+                        eprintln!{
+                            "[{loc}: error: todo tag without closing paren]",
+                            loc = display_loc()
+                        };
+
+                        continue
                     };
 
-                    continue
-                };
+                    let Ok(issue_number) = content[skip..skip + closing_paren_pos].parse::<u64>() else {
+                        eprintln!{
+                            "[{loc}: error: failed to parse issue number]",
+                            loc = display_loc()
+                        };
 
-                let Ok(issue_number) = content[skip..skip + closing_paren_pos].parse::<u64>() else {
-                    eprintln!{
-                        "[{loc}: error: failed to parse issue number]",
-                        loc = display_loc()
+                        continue
                     };
 
-                    continue
-                };
+                    mode_value.push_purge(Purge {
+                        tag: Tag { todo, issue_number },
+                        range: line_start..line_end
+                    });
+                }
 
-                mode_value.push_purge(Purge {
-                    tag: Tag { todo, issue_number },
-                    range: line_start..line_end
-                });
+                Mode::Listing => todo!("unimplemented")
             }
         }
 

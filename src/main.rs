@@ -1,4 +1,4 @@
-// TODO: Implement closing mode
+// TODO(#32): Implement closing mode
 // TODO(#25): Support for inline todo's
 // TODO(#4): Improve UX of TODO selection
 
