@@ -5,7 +5,7 @@ use crate::fm::{FileId, FileManager};
 
 use std::sync::Arc;
 use std::{io, mem, fmt};
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{Ordering, AtomicUsize};
 
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -83,6 +83,7 @@ impl TagInserter {
 
                         if let Err(err) = purges.apply(
                             &inserter.processed_count,
+                            &inserter.config,
                             &inserter.fm
                         ) {
                             eprintln!{
@@ -98,13 +99,13 @@ impl TagInserter {
     }
 
     fn insert_tags(&self, file_id: FileId) -> io::Result<()> {
+        if self.config.simulate_reporting { return Ok(()) }
+
         let mut insertions = mem::take(
             &mut self.fm.get_file_unchecked_mut(file_id).tags
         );
 
-        if insertions.is_empty() {
-            return Ok(())
-        }
+        if insertions.is_empty() { return Ok(()) }
 
         // sort ascending so that all prior inserts were at <= current offset
         insertions.sort_by(|a, b| a.todo.tag_insertion_offset.cmp(&b.todo.tag_insertion_offset));
@@ -134,20 +135,23 @@ impl TagInserter {
 
             let actual_offset = byte_offset + shift;
 
-            if !self.config.simulate_reporting {
-                mmap.copy_within(
-                    actual_offset..orig_len + shift,
-                    actual_offset + tag_len,
-                );
+            mmap.copy_within(
+                actual_offset..orig_len + shift,
+                actual_offset + tag_len,
+            );
 
-                mmap[actual_offset..actual_offset + tag_len]
-                    .copy_from_slice(insert_bytes);
+            mmap[actual_offset..actual_offset + tag_len]
+                .copy_from_slice(insert_bytes);
 
-                mmap.flush()?;
+            mmap.flush()?;
 
-                let msg = tag.commit_msg();
-                self.config.git_commit_changes(&file_path, &msg)?;
-            }
+            let msg = tag.commit_msg();
+            self.config.git_commit_changes(&file_path, &msg)?;
+
+            // TODO(#31): Processed count bug
+            //   main thread does not wait till tag inserter ends it execution,
+            //   this leads to main thread prematurely printing the processed_count
+            self.processed_count.fetch_add(1, Ordering::SeqCst);
 
             shift += tag_len;
         }
