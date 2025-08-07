@@ -168,7 +168,7 @@ impl Stalkr {
                 })
             };
 
-            // TODO(#29): Properly increment found_count
+            // TODO(#30): Properly increment found_count
             self.found_count.fetch_add(1, Ordering::SeqCst);
 
             let todo = Todo {
