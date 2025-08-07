@@ -1,4 +1,5 @@
-use crate::loc::Loc;
+use crate::tag::Tag;
+use crate::config::Config;
 use crate::fm::{FileId, FileManager};
 
 use std::fs::OpenOptions;
@@ -6,9 +7,19 @@ use std::ops::{Range, Deref, DerefMut};
 use std::sync::atomic::{Ordering, AtomicUsize};
 
 pub struct Purge {
-    pub loc: Loc,
-    pub issue_number: u64,
+    pub tag: Tag,
     pub range: Range<usize>
+}
+
+impl Purge {
+    #[inline(always)]
+    pub fn commit_msg(&self) -> String {
+        format!{
+            "Remove closed TODO{tag}: {title}",
+            tag = self.tag,
+            title = self.tag.todo.title
+        }
+    }
 }
 
 pub struct Purges {
@@ -37,6 +48,7 @@ impl Purges {
     pub fn apply(
         mut self,
         processed_count: &AtomicUsize,
+        config: &Config,
         fm: &FileManager
     ) -> anyhow::Result<()> {
         if self.is_empty() {
@@ -50,7 +62,7 @@ impl Purges {
         let file_path = fm.get_file_path_unchecked(self.file_id).to_owned();
         let mut mmap = fm.get_mmap_or_remmap_file_mut(self.file_id, new_len)?;
 
-        for Purge { range, .. } in self.purges.into_iter().rev() {
+        for ref purge @ Purge { ref range, .. } in self.purges.into_iter().rev() {
             let start = range.start;
             let end   = range.end;
 
@@ -64,17 +76,20 @@ impl Purges {
             // how many bytes follow this hole right now?
             let tail_len = new_len - end;
 
+            // reduce the effective length
+            new_len -= len;
+
             // slide the tail block down on top of the hole
             mmap.copy_within(end..end + tail_len, start);
 
-            processed_count.fetch_add(1, Ordering::SeqCst);
+            mmap.flush()?;
 
-            // reduce the effective length
-            new_len -= len;
+            let msg = purge.commit_msg();
+            config.git_commit_changes(&file_path, &msg)?;
+
+            processed_count.fetch_add(1, Ordering::SeqCst);
         }
 
-        // flush and shrink
-        mmap.flush()?;
         drop(mmap);
 
         OpenOptions::new()

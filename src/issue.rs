@@ -129,8 +129,8 @@ impl Issuer {
 
     async fn check_if_purge_needed(&self, purge: &Purge) -> bool {
         if !self.config.found_closed_todo.load(Ordering::SeqCst) {
-            let line_number = purge.loc.line_number();
-            let file_path = self.fm.get_file_path_unchecked(purge.loc.file_id());
+            let line_number = purge.tag.todo.loc.line_number();
+            let file_path = self.fm.get_file_path_unchecked(purge.tag.todo.loc.file_id());
             let truncated_path = util::truncate_path(
                 &file_path,
                 line_number,
@@ -141,7 +141,7 @@ impl Issuer {
             let path_dots_needed = Self::MAX_PATH_LEN.saturating_sub(path_with_line.len());
             let path_dots = ".".repeat(path_dots_needed);
 
-            let issue_str = format!("(issue #{x})", x = purge.issue_number);
+            let issue_str = format!("(issue #{x})", x = purge.tag.issue_number);
             let issue_dots_needed = 15usize.saturating_sub(issue_str.len());
             let issue_dots = ".".repeat(issue_dots_needed);
 
@@ -155,7 +155,7 @@ impl Issuer {
 
         self.config.api.check_if_issue_is_closed(
             self,
-            &Issue { issue_number: purge.issue_number }
+            &Issue { issue_number: purge.tag.issue_number }
         ).await
     }
 

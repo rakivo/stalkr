@@ -11,6 +11,17 @@ pub enum Mode {
     Reporting
 }
 
+impl Mode {
+    #[inline(always)]
+    pub const fn doing_what(&self) -> &str {
+        match self {
+            Self::Purging   => "purging",
+            Self::Reporting => "reporting",
+            Self::Listing   => "listing",
+        }
+    }
+}
+
 pub enum ModeValue {
     Reporting(Vec<Todo>),
     Purging(Purges),

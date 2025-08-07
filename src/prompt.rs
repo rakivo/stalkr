@@ -1,4 +1,6 @@
 use crate::util;
+use crate::loc::Loc;
+use crate::purge::Purges;
 use crate::config::Config;
 use crate::fm::FileManager;
 use crate::mode::ModeValue;
@@ -75,39 +77,14 @@ impl Prompter {
                     let to_report = loop {
                         util::clear_screen();
 
-                        println!("[detected project]: {project_url}\n");
+                        self.print_header(&project_url, &file_name);
 
-                        println!("[todoʼs from]: {file_name}\n");
-
-                        // build all prefixes and find max width to pad all titles
-                        let prefixes = todos
-                            .iter()
-                            .enumerate()
-                            .map(|(i, todo)| format!{
-                                "{n}. [line {line}]:",
-                                n = i + 1,
-                                line = todo.loc.line_number()
-                            }).collect::<Vec<_>>();
-
-                        let max_width = prefixes.iter().map(|p| p.len()).max().unwrap_or(0);
-
-                        // print each line with padding
-                        for (i, (todo, prefix)) in todos.iter().zip(prefixes).enumerate() {
-                            // how many spaces to add so that all titles line up
-                            let pad = max_width - prefix.len();
-
-                            // pad BEFORE the space between colon and title
-                            println!{
-                                "{prefix}{tab} {title}",
-                                tab = " ".repeat(pad),
-                                title = todo.title
-                            };
-
-                            if let Some(desc) = &todo.description {
-                                println!("   └── description:\n{d}", d = desc.display(9));
-                                if i < todos.len() - 1 { println!() }
-                            }
-                        }
+                        self.print_todos_with_descriptions(
+                            &todos,
+                            |todo| &todo.loc,
+                            |todo| &todo.title,
+                            |todo| todo.description.as_ref()
+                        );
 
                         println!();
 
@@ -116,6 +93,7 @@ impl Prompter {
 
                         if cmd.eq_ignore_ascii_case(Self::SKIP_KEY) { break None }
                         if cmd.eq_ignore_ascii_case(Self::HELP_KEY) { Self::print_help(); continue }
+                        if cmd.eq_ignore_ascii_case(Self::ALL_KEY)  { break Some(todos) }
 
                         // editing mode
                         if let Some(pos) = cmd.find(|c: char| !c.is_ascii_digit()) {
@@ -167,29 +145,23 @@ impl Prompter {
                         }
 
                         // selection mode
-                        let to_report = if cmd.eq_ignore_ascii_case(Self::ALL_KEY) {
-                            todos
-                        } else {
-                            let mut report_indexes = cmd.split(',').filter_map(|s| {
-                                s.trim().parse::<usize>().ok().map(|n| n.wrapping_sub(1))
-                            }).filter(|i| *i < todos.len()).collect::<Vec<_>>();
+                        let mut report_indexes = Self::get_indexes_from_comma_separated(
+                            &cmd,
+                            todos.len()
+                        );
 
-                            if report_indexes.is_empty() {
-                                break None
-                            }
+                        if report_indexes.is_empty() { break None }
 
-                            report_indexes.sort_unstable();
-                            report_indexes.dedup();
+                        report_indexes.sort_unstable();
+                        report_indexes.dedup();
 
-                            let mut to_report = report_indexes.into_iter()
-                                .rev()
-                                .map(|index| todos.remove(index))
-                                .collect::<Vec<_>>();
+                        let mut to_report = report_indexes.into_iter()
+                            .rev()
+                            .map(|index| todos.remove(index))
+                            .collect::<Vec<_>>();
 
-                            // restore original order
-                            to_report.reverse();
-                            to_report
-                        };
+                        // restore original order
+                        to_report.reverse();
 
                         break Some(to_report)
                     };
@@ -202,46 +174,54 @@ impl Prompter {
                     }
                 }
 
-                ModeValue::Purging(purges) => {
-                    // —— a simple preview-and-confirm for closed TODOs —— //
-                    let selection_string = format!(
-                        "[{a}] delete all   [{s}] skip   [{h}] help",
-                        a = Self::ALL_KEY,
-                        s = Self::SKIP_KEY,
-                        h = Self::HELP_KEY
-                    );
+                ModeValue::Purging(mut purges) => {
+                    let file_id = match purges.first().map(|p| p.tag.todo.loc.file_id()) {
+                        Some(id) => id,
+                        None => continue,
+                    };
+
+                    let file_name = self.fm.get_file_path_unchecked(file_id);
 
                     let to_delete = loop {
                         util::clear_screen();
-                        println!("Found {} closed TODOs:", purges.len());
-                        for (i, purge) in purges.iter().enumerate() {
-                            // assuming Purge has `.loc` and `issue_number`
-                            println!(
-                                "{n}. {path}:{line}  // issue #{num}",
-                                n    = i + 1,
-                                path = self.fm.get_file_path_unchecked(purge.loc.file_id()),
-                                line = purge.loc.line_number(),
-                                num  = purge.issue_number
-                            );
-                        }
-                        println!("\n{}", selection_string);
 
-                        let cmd = util::ask_input("");
+                        self.print_header(&project_url, &file_name);
+
+                        self.print_todos_with_descriptions(
+                            &purges,
+                            |purge| &purge.tag.todo.loc,
+                            |purge| &purge.tag.todo.title,
+                            |purge| purge.tag.todo.description.as_ref()
+                        );
+
+                        println!();
+
+                        let cmd = util::ask_input(&selection_string);
                         let cmd = cmd.trim();
 
-                        if cmd.eq_ignore_ascii_case(Self::SKIP_KEY) {
-                            break None;
-                        }
-                        if cmd.eq_ignore_ascii_case(Self::HELP_KEY) {
-                            Self::print_help();
-                            continue;
-                        }
-                        if cmd.eq_ignore_ascii_case(Self::ALL_KEY) {
-                            break Some(purges)
-                        }
+                        if cmd.eq_ignore_ascii_case(Self::SKIP_KEY) { break None }
+                        if cmd.eq_ignore_ascii_case(Self::HELP_KEY) { Self::print_help(); continue }
+                        if cmd.eq_ignore_ascii_case(Self::ALL_KEY)  { break Some(purges) }
 
-                        // invalid input → retry
-                        println!("unrecognized command. type '{}' for help.", Self::HELP_KEY);
+                        let mut purge_indexes = Self::get_indexes_from_comma_separated(
+                            &cmd,
+                            purges.len()
+                        );
+
+                        if purge_indexes.is_empty() { break None }
+
+                        purge_indexes.sort_unstable();
+                        purge_indexes.dedup();
+
+                        let mut selected = purge_indexes
+                            .into_iter()
+                            .rev()
+                            .map(|i| purges.remove(i))
+                            .collect::<Vec<_>>();
+
+                        selected.reverse(); // restore original order
+
+                        break Some(Purges { file_id, purges: selected })
                     };
 
                     if let Some(list) = to_delete {
@@ -256,6 +236,54 @@ impl Prompter {
     }
 
     #[inline]
+    fn print_header(&self, project_url: &str, file_name: &str) {
+        println!("[{what} mode]\n", what = self.config.mode.doing_what());
+        println!("[detected project]: {project_url}\n");
+        println!("[todoʼs from]: {file_name}\n");
+    }
+
+    fn print_todos_with_descriptions<T, FLoc, FTitle, FDesc>(
+        &self,
+        items: &[T],
+        get_loc: FLoc,
+        get_title: FTitle,
+        get_description: FDesc,
+    )
+    where
+        FLoc   : Fn(&T) -> &Loc,
+        FTitle : Fn(&T) -> &str,
+        FDesc  : Fn(&T) -> Option<&Description>,
+    {
+        // build all prefixes and find max width to pad all titles
+        let prefixes = items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| format!{
+                "{n}. [line {line}]:",
+                n = i + 1,
+                line = get_loc(item).line_number()
+            }).collect::<Vec<_>>();
+
+        let max_width = prefixes.iter().map(|p| p.len()).max().unwrap_or(0);
+
+        for (i, (item, prefix)) in items.iter().zip(prefixes).enumerate() {
+            let pad = max_width.saturating_sub(prefix.len());
+
+            println!{
+                "{prefix}{tab} {title}",
+                prefix = prefix,
+                tab = " ".repeat(pad),
+                title = get_title(item),
+            };
+
+            if let Some(desc) = get_description(item) {
+                println!("   └── description:\n{d}", d = desc.display(9));
+                if i < items.len() - 1 { println!() }
+            }
+        }
+    }
+
+    #[inline]
     fn get_selection_string() -> String {
         format!{
             "selection (e.g. 1,2; '{a}' select all; '{s}' skip file; '{h}' help):",
@@ -263,6 +291,13 @@ impl Prompter {
             s = Self::SKIP_KEY,
             h = Self::HELP_KEY,
         }
+    }
+
+    #[inline]
+    fn get_indexes_from_comma_separated(s: &str, cap: usize) -> Vec<usize> {
+        s.split(',').filter_map(|s| {
+            s.trim().parse::<usize>().ok().map(|n| n.wrapping_sub(1))
+        }).filter(|i| *i < cap).collect::<Vec<_>>()
     }
 
     #[inline]

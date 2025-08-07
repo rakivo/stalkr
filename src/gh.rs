@@ -98,12 +98,8 @@ impl Api for GithubApi {
 
                 match issue_number {
                     Ok(issue_number) => {
-                        issuer.reported_count.fetch_add(1, Ordering::SeqCst);
-
                         let file_id = todo.loc.file_id();
-
                         let tag = Tag { todo, issue_number };
-
                         issuer.fm.add_tag_to_file(file_id, tag);
                     }
                     Err(e) => eprintln!("[failed to parse JSON response: {e}]")
