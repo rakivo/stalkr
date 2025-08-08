@@ -1,7 +1,7 @@
 // TODO(#32): Implement closing mode
 // TODO(#33): Support for purging todo's with descriptions
 // TODO(#25): Support for inline todo's
-// TODO(#4): Improve UX of TODO selection
+
 
 use stalkr::cli::Cli;
 use stalkr::mode::Mode;
