@@ -164,13 +164,13 @@ impl Stalkr {
                 comment_scan_index = index + 1; // continue searching after the found byte
             }
 
-            let (comment_pos, marker_len) = match found_comment {
+            let (rel_comment_start, marker_len) = match found_comment {
                 Some(v) => v,
                 None => continue // no comment on this line
             };
 
             // the part after the comment marker, BEFORE trimming spaces
-            let rest_after_mark = &line_str[comment_pos + marker_len..];
+            let rest_after_mark = &line_str[rel_comment_start + marker_len..];
             let content = rest_after_mark.trim_start(); // content after marker and any spaces
 
             let ws_after_marker = rest_after_mark.len() - content.len();
@@ -221,8 +221,8 @@ impl Stalkr {
             // + todo_idx_in_content = start of TODO in content
             // + "TODO".len() = position after the word TODO
             let tag_insertion_offset = line_start
-                + comment_pos
-                + marker_len // TODO: inline todo 2
+                + rel_comment_start
+                + marker_len
                 + ws_after_marker
                 + todo_idx_in_content
                 + "TODO".len();
@@ -275,9 +275,17 @@ impl Stalkr {
                         continue
                     };
 
+                    let mut comment_ws_pos = rel_comment_start;
+                    while comment_ws_pos > 0 && line[comment_ws_pos - 1] == b' ' {
+                        comment_ws_pos -= 1
+                    }
+
+                    let global_comment_start = line_start + comment_ws_pos;
+                    let global_comment_end = line_end.saturating_sub(1);
+
                     mode_value.push_purge(Purge {
                         tag: Tag { todo, issue_number },
-                        range: line_start..line_end
+                        range: global_comment_start..global_comment_end
                     });
                 }
 
