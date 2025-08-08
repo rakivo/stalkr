@@ -141,28 +141,91 @@ impl Stalkr {
                 continue
             };
 
-            let trimmed = line_str.trim_start();
+            // find the first comment marker anywhere in the line
+            let mut comment_scan_index = 0;
+            let mut found_comment = None;
 
-            let marker_len = match util::is_line_a_comment(trimmed) {
-                Some(n) => n,
-                _ => continue
+            while comment_scan_index < line.len() {
+                let rel = memchr::memchr3(b'#', b'/', b'-', &line[comment_scan_index..]);
+
+                let rel = match rel {
+                    Some(i) => i,
+                    None => break,
+                };
+
+                let index = comment_scan_index + rel;
+
+                // safe to slice at `idx` because memchr found an ASCII byte
+                if let Some(marker_len) = util::is_line_a_comment(&line_str[index..]) {
+                    found_comment = Some((index, marker_len));
+                    break
+                }
+
+                comment_scan_index = index + 1; // continue searching after the found byte
+            }
+
+            let (comment_pos, marker_len) = match found_comment {
+                Some(v) => v,
+                None => continue // no comment on this line
             };
 
-            let content = trimmed[marker_len..].trim_start();
+            // the part after the comment marker, BEFORE trimming spaces
+            let rest_after_mark = &line_str[comment_pos + marker_len..];
+            let content = rest_after_mark.trim_start(); // content after marker and any spaces
+
+            let ws_after_marker = rest_after_mark.len() - content.len();
+
+            // helper: find TODO inside a byte slice using memchr
+            fn position_todo(haystack: &[u8], start: usize) -> Option<usize> {
+                let mut pos = start;
+                while let Some(i) = memchr::memchr(b'T', &haystack[pos..]) {
+                    let index = pos + i;
+                    if haystack[index..].starts_with(b"TODO") {
+                        return Some(index)
+                    }
+                    pos = index + 1;
+                }
+
+                None
+            }
+
+            let content_bytes = content.as_bytes();
+            let Some(todo_idx_in_content) = position_todo(content_bytes, 0) else {
+                continue
+            };
+
+            // we require the TODO to be right after the comment (after optional whitespace),
+            // i.e. at the start of `content`.
+            if todo_idx_in_content != 0 {
+                // TODO is present but not immediately after the comment marker -> skip
+                continue
+            }
+
+            // todo_slice starts at the "TODO" occurrence (within trimmed content)
+            let todo_slice = &content[todo_idx_in_content..];
+
+            let is_untagged = todo_slice.starts_with("TODO:");
+            let (title, is_tagged) = Todo::extract_todo_title(todo_slice);
+
+            if title.trim().is_empty() { continue }
+
+            if !is_tagged && !is_untagged { continue }
 
             let loc = Loc(file_id, line_number - 1);
 
             let line_start = byte_offset - line.len();
 
-            let ws_trimmed           = line_str.len() - trimmed.len();        // leading spaces removed
-            let rest_after_mark      = &trimmed[marker_len..];                // before trimming spaces
-            let ws_after_marker      = rest_after_mark.len() - content.len(); // spaces removed after marker
-            let tag_insertion_offset = line_start + ws_trimmed + marker_len + ws_after_marker + "TODO".len();
-
-            let is_untagged = content.starts_with("TODO:");
-            let (title, is_tagged) = Todo::extract_todo_title(content);
-
-            if !is_tagged && !is_untagged { continue }
+            // position where to insert tag: compute absolute byte offset in file.
+            // line_start + comment_pos = start of comment marker in file
+            // + marker_len + ws_after_marker = start of `content` in file
+            // + todo_idx_in_content = start of TODO in content
+            // + "TODO".len() = position after the word TODO
+            let tag_insertion_offset = line_start
+                + comment_pos
+                + marker_len // TODO: inline todo 2
+                + ws_after_marker
+                + todo_idx_in_content
+                + "TODO".len();
 
             let description = {
                 let desc_start = byte_offset;
@@ -218,7 +281,7 @@ impl Stalkr {
                     });
                 }
 
-                Mode::Listing => todo!("unimplemented")
+                Mode::Listing => unimplemented!()
             }
         }
 
