@@ -1,7 +1,6 @@
 // TODO(#32): Implement closing mode
 // TODO(#33): Support for purging todo's with descriptions
-
-
+// TODO(#34): Delete emtpy lines left from purging
 
 use stalkr::cli::Cli;
 use stalkr::mode::Mode;
