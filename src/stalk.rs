@@ -281,7 +281,14 @@ impl Stalkr {
                     }
 
                     let global_comment_start = line_start + comment_ws_pos;
-                    let global_comment_end = line_end.saturating_sub(1);
+
+                    let global_comment_end = if rel_comment_start == 0 {
+                        // include newline in this line for the purge
+                        line_end
+                    } else {
+                        // don't include
+                        line_end.saturating_sub(1)
+                    };
 
                     mode_value.push_purge(Purge {
                         tag: Tag { todo, issue_number },

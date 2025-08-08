@@ -126,7 +126,7 @@ pub fn parse_owner_repo(url: &str) -> Option<(String, String)> {
     Some((owner, repo))
 }
 
-pub fn truncate_path(path: &str, line_number: u32, max_len: usize) -> Cow<str> {
+pub fn truncate_path(path: &str, line_number: u32, max_len: usize) -> Cow<'_, str> {
     let line_number_len = line_number.to_string().len() + 1; // ':'
 
     let available_for_path = max_len.saturating_sub(line_number_len);
