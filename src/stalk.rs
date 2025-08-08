@@ -235,9 +235,6 @@ impl Stalkr {
                 })
             };
 
-            // TODO(#30): Properly increment found_count
-            self.found_count.fetch_add(1, Ordering::SeqCst);
-
             let todo = Todo {
                 loc,
                 description,
@@ -248,6 +245,8 @@ impl Stalkr {
 
             match self.config.mode {
                 Mode::Reporting => if is_untagged {
+                    self.found_count.fetch_add(1, Ordering::SeqCst);
+
                     mode_value.push_todo(todo);
                 }
 

@@ -30,7 +30,8 @@ pub enum IssuerTx {
 pub struct Issuer {
     pub issues_api_url: Arc<str>,
     pub issuer_tx: IssuerTx,
-    pub reported_count: Arc<AtomicUsize>,
+    pub found_count: Arc<AtomicUsize>,
+    pub processed_count: Arc<AtomicUsize>,
     pub config: Arc<Config>,
     pub fm: Arc<FileManager>,
     pub max_http_concurrency: usize,
@@ -47,7 +48,8 @@ impl Issuer {
             issuer_tx: IssuerTx,
             config: Arc<Config>,
             fm: Arc<FileManager>,
-            reported_count: Arc<AtomicUsize>,
+            found_count: Arc<AtomicUsize>,
+            processed_count: Arc<AtomicUsize>,
             max_http_concurrency: usize,
         ) -> Self {
             let rq_client = config.api.make_client(&config)
@@ -58,7 +60,8 @@ impl Issuer {
             Self {
                 issuer_tx,
                 issues_api_url,
-                reported_count,
+                found_count,
+                processed_count,
                 config,
                 fm,
                 max_http_concurrency,
@@ -108,6 +111,8 @@ impl Issuer {
                         if closed.is_empty() {
                             return
                         }
+
+                        self.found_count.fetch_add(closed.len(), Ordering::SeqCst);
 
                         let purges = Purges {
                             purges: closed,
@@ -166,7 +171,7 @@ impl Issuer {
 
             sleep(Duration::from_millis(150)).await;
 
-            self.reported_count.fetch_add(1, Ordering::SeqCst);
+            self.processed_count.fetch_add(1, Ordering::SeqCst);
 
             // fake issue number
             let issue_number = rand::random::<u64>() % 10_000;

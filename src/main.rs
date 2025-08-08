@@ -88,6 +88,7 @@ async fn main() {
         },
         config.clone(),
         fm.clone(),
+        found_count.clone(),
         processed_count.clone(),
         max_http_concurrency,
         issue_rx
@@ -124,7 +125,14 @@ async fn main() {
     let processed_count = processed_count.load(Ordering::Acquire);
 
     if found_count == 0 {
-        println!("[no todo's found]")
+        println!{
+            "[no todo's to {what}]",
+            what = match config.mode {
+                Mode::Purging   => "purge",
+                Mode::Reporting => "report",
+                Mode::Listing   => "list"
+            }
+        }
     } else {
         println!{
             "[{processed_count}/{found_count}] todo's {what}",
