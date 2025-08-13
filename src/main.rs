@@ -1,3 +1,14 @@
+// TODO(#35): Have determined comment-type per TODO
+// e.g. this:
+// ```
+//  // TODO: Generalize `diag` param type in not(fancy-diagnostics)
+//  // in DiagnosticRenderer::render_to_string
+//  #[inline]
+//  #[cfg(not(feature = "fancy-diagnostics"))]
+// ```
+// won't work correctly and #[inline] and #[cfg(..)] lines will
+// be recognized as continuation of the description.
+
 // TODO(#32): Implement closing mode
 // TODO(#33): Support for purging todo's with descriptions
 
