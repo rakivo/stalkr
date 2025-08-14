@@ -1,3 +1,5 @@
+![](https://github.com/rakivo/stalkr/blob/master/assets/stalkr.gif)
+
 > [!Warning]
 > stalkr is UNFINISHED
 
