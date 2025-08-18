@@ -10,7 +10,6 @@
 // be recognized as continuation of the description.
 
 // TODO(#32): Implement closing mode
-// TODO(#33): Support for purging todo's with descriptions
 
 use stalkr::cli::Cli;
 use stalkr::mode::Mode;
