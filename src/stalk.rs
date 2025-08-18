@@ -227,13 +227,12 @@ impl Stalkr {
                 + todo_idx_in_content
                 + "TODO".len();
 
-            let description = {
-                let desc_start = byte_offset;
-                let rest = &haystack[desc_start..];
-                Todo::extract_todo_description(unsafe {
-                    str::from_utf8_unchecked(rest)
-                })
-            };
+            let (
+                description,
+                description_line_end
+            ) = Todo::extract_todo_description(
+                &haystack[byte_offset..]
+            ).map_or((None, None), |(d, l)| (Some(d), Some(l)));
 
             let todo = Todo {
                 loc,
@@ -280,6 +279,10 @@ impl Stalkr {
                     }
 
                     let global_comment_start = line_start + comment_ws_pos;
+
+                    let line_end = description_line_end.map(|dl| {
+                        dl + byte_offset
+                    }).unwrap_or(line_end);
 
                     let global_comment_end = if rel_comment_start == 0 {
                         // include newline in this line for the purge

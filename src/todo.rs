@@ -1,7 +1,7 @@
 use crate::util;
 use crate::loc::Loc;
 
-use std::fmt;
+use std::{fmt, str};
 
 #[derive(Debug)]
 pub struct Description {
@@ -106,33 +106,60 @@ impl Todo {
         None
     }
 
+    /// Returns: (Description, index of the last newline in the last descriptionl line)
     #[inline]
-    pub fn extract_todo_description(h: &str) -> Option<Description> {
+    pub fn extract_todo_description(h: &[u8]) -> Option<(Description, usize)> {
         let mut lines = Vec::with_capacity(4);
 
-        for line in h.lines() {
-            if util::is_line_a_comment(line).is_none() { break }
+        let mut start = 0;
+        let mut end   = 0;
 
-            let line = util::trim_comment_start(line);
+        while start < h.len() {
+            // find next newline
+            let nl_rel = memchr::memchr(b'\n', &h[start..]);
+            let line_end = match nl_rel {
+                Some(rel) => start + rel + 1, // include '\n'
+                None      => h.len(),        // last line w/o '\n'
+            };
 
-            if line.is_empty() { continue }
+            let line = &h[start..line_end];
 
-            if ["TODO:", "TODO("].iter().any(|p| line.starts_with(p)) {
+            start = line_end;
+
+            let line_str = unsafe {
+                str::from_utf8_unchecked(line)
+            };
+
+            if util::is_line_a_comment(line_str).is_none() {
                 break
             }
 
-            let line = line.to_owned();
+            let line_str = util::trim_comment_start(line_str);
 
-            let line = util::string_into_boxed_str_norealloc(line);
+            if line_str.is_empty() {
+                break
+            }
 
-            lines.push(line);
+            if ["TODO:", "TODO("].iter().any(|p| line_str.starts_with(p)) {
+                break
+            }
+
+            end = line_end;
+
+            let line_str = line_str.strip_suffix('\n').unwrap_or(line_str);
+
+            let line_str = util::string_into_boxed_str_norealloc(
+                line_str.to_owned()
+            );
+
+            lines.push(line_str);
         }
 
         if lines.is_empty() {
-            None
-        } else {
-            let lines = util::vec_into_boxed_slice_norealloc(lines);
-            Some(Description { lines })
+            return None
         }
+
+        let lines = util::vec_into_boxed_slice_norealloc(lines);
+        Some((Description { lines }, end))
     }
 }
