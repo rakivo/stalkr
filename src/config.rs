@@ -3,7 +3,7 @@ use crate::cli::Cli;
 use crate::api::Api;
 use crate::mode::Mode;
 
-use std::{fs, io};
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::AtomicBool;
@@ -107,14 +107,14 @@ impl Config {
         None
     }
 
-    pub fn git_commit_changes(&self, path: &str, msg: &str) -> io::Result<()> {
+    pub fn git_commit_changes(&self, path: &str, msg: &str) -> anyhow::Result<()> {
         let status = Command::new("git")
             .arg("add")
             .arg(path)
             .status()?;
 
         if !status.success() {
-            panic!("git add failed");
+            anyhow::bail!("git add failed")
         }
 
         let status = Command::new("git")
@@ -124,7 +124,7 @@ impl Config {
             .status()?;
 
         if !status.success() {
-            panic!("git commit failed");
+            anyhow::bail!("git commit failed")
         }
 
         Ok(())

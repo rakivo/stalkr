@@ -3,8 +3,8 @@ use crate::purge::Purges;
 use crate::config::Config;
 use crate::fm::{FileId, FileManager};
 
+use std::{mem, fmt};
 use std::sync::Arc;
-use std::{io, mem, fmt};
 use std::sync::atomic::{Ordering, AtomicUsize};
 
 use futures::StreamExt;
@@ -98,7 +98,7 @@ impl TagInserter {
         }).await;
     }
 
-    fn insert_tags(&self, file_id: FileId) -> io::Result<()> {
+    fn insert_tags(&self, file_id: FileId) -> anyhow::Result<()> {
         if self.config.simulate_reporting { return Ok(()) }
 
         let mut insertions = mem::take(

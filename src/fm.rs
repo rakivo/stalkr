@@ -89,12 +89,15 @@ impl StalkrFile {
         unsafe { self.contents.as_mut().unwrap_unchecked() }
     }
 
+    #[inline]
     pub fn read_file_to_vec(&mut self) -> io::Result<&[u8]> {
         let file_size = self.meta.len() as usize;
 
         match self.contents {
             Some(StalkrFileContents::Buf(_)) => {}
-            Some(StalkrFileContents::Mmap(_)) => panic!("`read_file_to_end` called on a mmapped file"),
+            Some(StalkrFileContents::Mmap(_)) => unreachable!{
+                "`read_file_to_end` called on a mmapped file"
+            },
 
             None => {
                 let mut buf = Vec::with_capacity(file_size);
@@ -106,6 +109,7 @@ impl StalkrFile {
         Ok(self.read_contents_unchecked().as_buf_unchecked())
     }
 
+    #[inline]
     pub fn mmap_file(&mut self) -> io::Result<&MmapMut> {
         if let Some(StalkrFileContents::Mmap(_)) = &self.contents {
             return Ok(self.read_contents_unchecked().as_mmap_unchecked())
@@ -194,10 +198,12 @@ impl FileManager {
     #[inline]
     pub fn mark_seen(&self, uncanonicalized: &Path) -> bool {
         let Ok(canonicalized) = fs::canonicalize(uncanonicalized) else {
-            panic!{
-                "could not canonicalize file path: {u}",
+            eprintln!{
+                "[could not canonicalize file path]: {u}",
                 u = uncanonicalized.display()
-            }
+            };
+
+            return false
         };
 
         let s = canonicalized.to_string_lossy().into_owned();
