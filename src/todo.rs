@@ -1,4 +1,4 @@
-use crate::util;
+use crate::{comment::Comment, util};
 use crate::loc::Loc;
 
 use std::{fmt, str};
@@ -108,7 +108,10 @@ impl Todo {
 
     /// Returns: (Description, index of the last newline in the last descriptionl line)
     #[inline]
-    pub fn extract_todo_description(h: &[u8]) -> Option<(Description, usize)> {
+    pub fn extract_todo_description(
+        h: &[u8],
+        comment: Comment
+    ) -> Option<(Description, usize)> {
         let mut lines = Vec::with_capacity(4);
 
         let mut start = 0;
@@ -130,7 +133,7 @@ impl Todo {
                 str::from_utf8_unchecked(line)
             };
 
-            if util::is_line_a_comment(line_str).is_none() {
+            if comment.is_line_a_comment(line_str).is_none() {
                 break
             }
 

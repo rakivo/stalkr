@@ -6,6 +6,7 @@ use crate::todo::Todo;
 use crate::purge::Purge;
 use crate::prompt::Prompt;
 use crate::config::Config;
+use crate::comment::Comment;
 use crate::issue::IssueValue;
 use crate::mode::{Mode, ModeValue};
 use crate::fm::{FileManager, StalkrFile};
@@ -144,9 +145,15 @@ impl Stalkr {
             // find the first comment marker anywhere in the line
             let mut comment_scan_index = 0;
             let mut found_comment = None;
+            let mut comment = Comment::Slash;
 
             while comment_scan_index < line.len() {
-                let rel = memchr::memchr3(b'#', b'/', b'-', &line[comment_scan_index..]);
+                let rel = memchr::memchr3(
+                    Comment::Hash as _,
+                    Comment::Slash as _,
+                    Comment::Dash as _,
+                    &line[comment_scan_index..]
+                );
 
                 let rel = match rel {
                     Some(i) => i,
@@ -154,6 +161,8 @@ impl Stalkr {
                 };
 
                 let index = comment_scan_index + rel;
+
+                comment = Comment::from_u8_unchecked(line[index]);
 
                 // safe to slice at `idx` because memchr found an ASCII byte
                 if let Some(marker_len) = util::is_line_a_comment(&line_str[index..]) {
@@ -231,7 +240,8 @@ impl Stalkr {
                 description,
                 description_line_end
             ) = Todo::extract_todo_description(
-                &haystack[byte_offset..]
+                &haystack[byte_offset..],
+                comment
             ).map_or((None, None), |(d, l)| (Some(d), Some(l)));
 
             let todo = Todo {

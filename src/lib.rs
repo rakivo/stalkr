@@ -18,3 +18,4 @@ pub mod purge;
 pub mod stalk;
 pub mod config;
 pub mod prompt;
+pub mod comment;
