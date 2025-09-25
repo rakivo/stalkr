@@ -95,7 +95,7 @@ impl Purges {
             truncate_file(new_len)?;
 
             let msg = purge.commit_msg();
-            config.git_commit_changes(&file_path, &msg)?;
+            config.git_locker.commit_changes(&file_path, &msg)?;
 
             processed_count.fetch_add(1, Ordering::SeqCst);
         }

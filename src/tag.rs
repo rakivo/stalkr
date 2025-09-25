@@ -146,7 +146,7 @@ impl TagInserter {
             mmap.flush()?;
 
             let msg = tag.commit_msg();
-            self.config.git_commit_changes(&file_path, &msg)?;
+            self.config.git_locker.commit_changes(&file_path, &msg)?;
 
             self.processed_count.fetch_add(1, Ordering::SeqCst);
 

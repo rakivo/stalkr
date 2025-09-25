@@ -7,6 +7,7 @@ pub mod util;
 
 pub mod gh;
 pub mod fm;
+pub mod git;
 pub mod loc;
 pub mod tag;
 pub mod cli;

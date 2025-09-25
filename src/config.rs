@@ -2,10 +2,11 @@ use crate::util;
 use crate::cli::Cli;
 use crate::api::Api;
 use crate::mode::Mode;
+use crate::git::GitLocker;
 
 use std::fs;
+use std::sync::Arc;
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::atomic::AtomicBool;
 
 pub struct Config {
@@ -17,6 +18,8 @@ pub struct Config {
     pub mode: Mode,
 
     pub api: Box<dyn Api>,
+
+    pub git_locker: Arc<GitLocker>,
 
     pub simulate_reporting: bool,
 
@@ -64,6 +67,8 @@ impl Config {
 
         let found_closed_todo = AtomicBool::new(false);
 
+        let git_locker = Arc::new(GitLocker::new());
+
         Ok(Self {
             api,
             owner,
@@ -73,6 +78,7 @@ impl Config {
             mode,
             found_closed_todo,
             simulate_reporting,
+            git_locker,
         })
     }
 
@@ -105,28 +111,5 @@ impl Config {
         }
 
         None
-    }
-
-    pub fn git_commit_changes(&self, path: &str, msg: &str) -> anyhow::Result<()> {
-        let status = Command::new("git")
-            .arg("add")
-            .arg(path)
-            .status()?;
-
-        if !status.success() {
-            anyhow::bail!("git add failed")
-        }
-
-        let status = Command::new("git")
-            .arg("commit")
-            .arg("-m")
-            .arg(msg)
-            .status()?;
-
-        if !status.success() {
-            anyhow::bail!("git commit failed")
-        }
-
-        Ok(())
     }
 }
