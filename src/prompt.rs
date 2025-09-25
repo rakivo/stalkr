@@ -9,8 +9,11 @@ use crate::issue::IssueValue;
 use crate::tag::InserterValue;
 
 use std::sync::Arc;
+use std::sync::atomic::{Ordering, AtomicUsize};
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+
+pub type ListValue = Prompt;
 
 pub struct Prompt {
     pub mode_value: ModeValue
@@ -19,6 +22,7 @@ pub struct Prompt {
 pub enum PrompterTx {
     Issuer(UnboundedSender<IssueValue>),
     Inserter(UnboundedSender<InserterValue>),
+    Listing // when listing there's no need to send anything
 }
 
 impl PrompterTx {
@@ -26,7 +30,7 @@ impl PrompterTx {
     const fn as_issuer_unchecked(&self) -> &UnboundedSender<IssueValue> {
         match self {
             Self::Issuer(i) => i,
-            Self::Inserter(_) => unreachable!()
+            _ => unreachable!()
         }
     }
 
@@ -34,7 +38,7 @@ impl PrompterTx {
     const fn as_inserter_unchecked(&self) -> &UnboundedSender<InserterValue> {
         match self {
             Self::Inserter(i) => i,
-            Self::Issuer(_) => unreachable!()
+            _ => unreachable!()
         }
     }
 }
@@ -43,6 +47,8 @@ pub struct Prompter {
     pub fm: Arc<FileManager>,
     pub config: Arc<Config>,
     pub tx: PrompterTx,
+    // for Listing mode
+    pub processed_count: Arc<AtomicUsize>,
 }
 
 impl Prompter {
@@ -56,9 +62,10 @@ impl Prompter {
         pub fn new(
             fm: Arc<FileManager>,
             config: Arc<Config>,
-            tx: PrompterTx
+            tx: PrompterTx,
+            processed_count: Arc<AtomicUsize>
         ) -> Self {
-            Self { fm, config, tx }
+            Self { fm, config, tx, processed_count }
         }
     }
 
@@ -173,9 +180,32 @@ impl Prompter {
                             .send(ModeValue::Reporting(to_report))
                             .is_err()
                         {
-                            eprintln!("[could not send todos to issue worker]");
+                            eprintln!("[could not send todoʼs to issue worker]");
                         }
                     }
+                }
+
+                ModeValue::Listing(todos) => {
+                    let Some(file_id) = todos.first().map(|t| t.loc.file_id()) else {
+                        continue
+                    };
+
+                    util::clear_screen();
+
+                    let file_name = self.fm.get_file_path_unchecked(file_id);
+                    self.print_header(&project_url, &file_name);
+
+                    Self::print_todos_with_descriptions(
+                        &todos,
+                        |todo| &todo.loc,
+                        |todo| &todo.title,
+                        |todo| todo.description.as_ref()
+                    );
+
+                    self.processed_count.fetch_add(todos.len(), Ordering::SeqCst);
+
+                    println!();
+                    Self::print_enter_to_continue();
                 }
 
                 ModeValue::Purging(mut purges) => {
@@ -233,7 +263,7 @@ impl Prompter {
                             .send(InserterValue::Purging(list))
                             .is_err()
                         {
-                            eprintln!("[could not send todos to purging worker]");
+                            eprintln!("[could not send todoʼs to purging worker]");
                         }
                     }
                 }
@@ -243,7 +273,7 @@ impl Prompter {
 
     #[inline]
     fn print_header(&self, project_url: &str, file_name: &str) {
-        println!("[{what} mode]\n", what = self.config.mode.doing_what());
+        println!("[{what} mode]\n", what = self.config.mode.to_string_actioning());
         println!("[detected project]: {project_url}\n");
         println!("[todoʼs from]: {file_name}\n");
     }
@@ -291,7 +321,7 @@ impl Prompter {
     #[inline]
     fn get_selection_string() -> String {
         format!{
-            "selection (e.g. 1,2; '{a}' select all; '{s}' skip file; '{h}' help):",
+            "selection (e.g. 1,2; '{a}' all; '{s}' skip file; '{h}' help; '^C' quit):",
             a = Self::ALL_KEY,
             s = Self::SKIP_KEY,
             h = Self::HELP_KEY,
@@ -306,20 +336,26 @@ impl Prompter {
     }
 
     #[inline]
+    fn print_enter_to_continue() {
+        _ = util::ask_input("press <enter> to continue ..");
+    }
+
+    #[inline]
     fn print_help() {
         const HELP_TEXT: &str = r"
 HELP:
- • enter comma-separated indices to select todoʼs, e.g. 1,3,5
- • all -> select all
- • q   -> skip this file entirely
- • h   -> show this help screen
- • prefix with:
+ - enter comma-separated indices to select todoʼs, e.g. 1,3,5
+ - all -> select all
+ - s   -> skip this file entirely
+ - ^C  -> skip all files
+ - h   -> show this help screen
+ - prefix with:
      t        -> edit title       (e.g. 6t)
      d        -> edit description (e.g. 6d)
      td or dt -> edit both        (e.g. 4td)
 ";
 
         println!("{HELP_TEXT}");
-        _ = util::ask_input("press <enter> to continue ..");
+        Self::print_enter_to_continue();
     }
 }

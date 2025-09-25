@@ -31,7 +31,7 @@ impl Cli {
     const DEFAULT_REMOTE: &str = "origin";
 
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn remote(&self) -> &str {
         match &self.command {
             Some(Commands::Purge { remote, .. })  => remote,
@@ -41,7 +41,7 @@ impl Cli {
     }
 
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn simulate(&self) -> bool {
         match &self.command {
             Some(Commands::Report { simulate, .. }) => *simulate,
@@ -50,12 +50,11 @@ impl Cli {
     }
 
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub const fn mode(&self) -> Mode {
         match &self.command {
             Some(Commands::List { .. })  => Mode::Listing,
             Some(Commands::Purge { .. }) => Mode::Purging,
-
             _ => Mode::Reporting
         }
     }

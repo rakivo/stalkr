@@ -22,6 +22,7 @@ pub type IssueValue = ModeValue;
 
 #[derive(Clone)]
 pub enum IssuerTx {
+    None, // when listing there's no need to issue anything
     Prompter(UnboundedSender<Prompt>),
     Inserter(UnboundedSender<InserterValue>),
 }

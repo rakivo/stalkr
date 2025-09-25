@@ -12,7 +12,7 @@ use std::sync::atomic::AtomicBool;
 pub struct Config {
     pub owner : Box<str>,
     pub repo  : Box<str>,
-    pub token : Box<str>,
+    pub token : Option<Box<str>>,
     pub cwd   : Box<PathBuf>,
 
     pub mode: Mode,
@@ -30,11 +30,19 @@ impl Config {
     pub fn new(cli: &Cli) -> anyhow::Result::<Self> {
         let api = Box::new(crate::gh::GithubApi);
 
-        let Ok(token) = api.get_api_token() else {
-            return Err(anyhow::anyhow!{
-                "could not get {token} env variable",
-                token = api.get_api_token_env_var()
-            })
+        let token = if cli.mode() == Mode::Listing {
+            None
+        } else {
+            let Ok(token) = api.get_api_token() else {
+                return Err(anyhow::anyhow!{
+                    concat!{
+                        "couldn't get {token} env variable\n",
+                        "note: if you just want to list the todos, do: `stalkr list`",
+                    },
+                    token = api.get_api_token_env_var()
+                })
+            };
+            Some(token)
         };
 
         let remote = cli.remote();
@@ -50,7 +58,7 @@ impl Config {
             ).as_deref().and_then(util::parse_owner_repo) {
                 Some(x) => x,
                 None => return Err(anyhow::anyhow!{
-                    "could not detect Github owner/repo"
+                    "couldn't detect Github owner/repo"
                 })
             }
         };
@@ -61,7 +69,7 @@ impl Config {
 
         let owner = util::string_into_boxed_str_norealloc(owner);
         let repo  = util::string_into_boxed_str_norealloc(repo);
-        let token = util::string_into_boxed_str_norealloc(token);
+        let token = token.map(util::string_into_boxed_str_norealloc);
 
         let simulate_reporting = cli.simulate();
 
@@ -80,6 +88,12 @@ impl Config {
             simulate_reporting,
             found_closed_todo,
         })
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    pub fn token(&self) -> &str {
+        self.token.as_ref().unwrap()
     }
 
     #[must_use]

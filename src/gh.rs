@@ -65,7 +65,7 @@ impl Api for GithubApi {
                     AUTHORIZATION,
                     HeaderValue::from_str(&format!{
                         "token {token}",
-                        token = config.token
+                        token = config.token()
                     }).unwrap()
                 ),
                 (

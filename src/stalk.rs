@@ -4,19 +4,16 @@ use crate::loc::Loc;
 use crate::fm::FileId;
 use crate::todo::Todo;
 use crate::purge::Purge;
-use crate::prompt::Prompt;
 use crate::config::Config;
 use crate::comment::Comment;
 use crate::issue::IssueValue;
 use crate::mode::{Mode, ModeValue};
+use crate::prompt::{ListValue, Prompt};
 use crate::fm::{FileManager, StalkrFile};
 
 use std::str;
 use std::sync::Arc;
 use std::path::Path;
-use std::cell::RefCell;
-use std::io::Write as _;
-use std::fmt::Write as _;
 use std::fs::OpenOptions;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -29,9 +26,9 @@ use tokio::sync::mpsc::UnboundedSender;
 const MMAP_THRESHOLD: usize = 1 * 1024 * 1024;
 
 pub enum StalkrTx {
-    None, // when Listing we don't need to send anything
     Issuer(UnboundedSender<IssueValue>),
     Prompter(UnboundedSender<Prompt>),
+    Listing(UnboundedSender<ListValue>),
 }
 
 pub struct Stalkr {
@@ -103,10 +100,6 @@ impl Stalkr {
             self.search(&mmap[..], path_str, file_id)
         };
 
-        let Some(mode_value) = mode_value else {
-            return Ok(())
-        };
-
         if mode_value.is_empty() {
             return Ok(())
         }
@@ -126,7 +119,11 @@ impl Stalkr {
                 }
             }
 
-            StalkrTx::None => {}
+            StalkrTx::Listing(listing_tx) => {
+                if listing_tx.send(Prompt { mode_value }).is_err() {
+                    eprintln!("[could not send todoʼs to listing worker]");
+                }
+            }
         }
 
         Ok(())
@@ -138,7 +135,7 @@ impl Stalkr {
         haystack: &[u8],
         file_path: &str,
         file_id: FileId
-    ) -> Option<ModeValue> {
+    ) -> ModeValue {
         let mut mode_value = ModeValue::new(self.config.mode, file_id);
 
         let mut byte_offset = 0;
@@ -282,13 +279,13 @@ impl Stalkr {
                 Some(issue_number)
             };
 
-            match (self.config.mode, mode_value.as_mut()) {
-                (Mode::Reporting, Some(mode_value)) => if is_untagged {
+            match self.config.mode {
+                Mode::Reporting => if is_untagged {
                     self.found_count.fetch_add(1, Ordering::SeqCst);
                     mode_value.push_todo(todo);
                 }
 
-                (Mode::Purging, Some(mode_value)) => if is_tagged {
+                Mode::Purging => if is_tagged {
                     let Some(issue_number) = try_get_issue_number() else {
                         eprintln!{
                             "[{loc}: error: failed to parse issue number]",
@@ -323,45 +320,10 @@ impl Stalkr {
                     });
                 }
 
-                (Mode::Listing, _) => {
+                Mode::Listing => {
                     self.found_count.fetch_add(1, Ordering::SeqCst);
-
-                    thread_local! {
-                        static BUF: RefCell<String> = RefCell::new(String::with_capacity(1024));
-                    }
-
-                    BUF.with_borrow_mut(|buf| {
-                        buf.clear();
-
-                        if let Some(issue_number) = try_get_issue_number() {
-                            _ = writeln!{
-                                &mut *buf,
-                                "[{loc}] {title} #{issue_number}",
-                                loc = loc.display_from_str(file_path),
-                                title = todo.title
-                            };
-                        } else {
-                            _ = writeln!{
-                                &mut *buf,
-                                "[{loc}] {title}",
-                                loc = loc.display_from_str(file_path),
-                                title = todo.title
-                            };
-                        }
-
-                        if let Some(desc) = todo.description.as_ref() {
-                            _ = write!{
-                                &mut *buf,
-                                "   └── description:\n{d}\n",
-                                d = desc.display(9)
-                            };
-                        }
-
-                        _ = std::io::stdout().write_all(buf.as_bytes());
-                    });
+                    mode_value.push_todo(todo);
                 }
-
-                _ => {}
             }
         }
 
