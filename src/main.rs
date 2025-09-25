@@ -34,6 +34,30 @@ async fn main() {
         .build_global()
         .expect("[could not build global rayon threadpool]");
 
+    // ---------------------- todo's counts ----------------------
+
+    // the count of found (unreported + reported) todo's
+    let found_count = Arc::new(AtomicUsize::new(0));
+
+    // the count of reported todo's
+    let processed_count = Arc::new(AtomicUsize::new(0));
+
+    let fm = Arc::new(FileManager::default());
+
+    if config.mode == Mode::Listing {
+        Stalkr::new(
+            fm.clone(),
+            config.clone(),
+            StalkrTx::None,
+            found_count.clone()
+        ).run();
+
+        let found_count = found_count.load(Ordering::Acquire);
+        println!("[found {found_count} todoʼs]");
+
+        return
+    }
+
     // ---------------------- worker channels ----------------------
 
     // stalkr workers  -> prompter thread
@@ -45,17 +69,7 @@ async fn main() {
     // issue workers   -> inserter workers
     let (inserter_tx, inserter_rx) = unbounded_channel();
 
-    // ---------------------- todo's counts ----------------------
-
-    // the count of found (unreported + reported) todo's
-    let found_count = Arc::new(AtomicUsize::new(0));
-
-    // the count of reported todo's
-    let processed_count = Arc::new(AtomicUsize::new(0));
-
     // ---------------------- workers spawns ----------------------
-
-    let fm = Arc::new(FileManager::default());
 
     let prompter_task = Prompter::spawn(
         fm.clone(),
@@ -63,7 +77,7 @@ async fn main() {
         match config.mode {
             Mode::Purging   => PrompterTx::Inserter(inserter_tx.clone()),
             Mode::Reporting => PrompterTx::Issuer(issue_tx.clone()),
-            Mode::Listing   => todo!()
+            Mode::Listing   => unreachable!()
         },
         prompter_rx
     );
@@ -74,7 +88,7 @@ async fn main() {
         match config.mode {
             Mode::Purging   => StalkrTx::Issuer(issue_tx.clone()),
             Mode::Reporting => StalkrTx::Prompter(prompter_tx.clone()),
-            Mode::Listing   => todo!()
+            Mode::Listing   => unreachable!()
         },
         found_count.clone()
     );
@@ -83,7 +97,7 @@ async fn main() {
         match config.mode {
             Mode::Purging   => IssuerTx::Prompter(prompter_tx.clone()),
             Mode::Reporting => IssuerTx::Inserter(inserter_tx.clone()),
-            Mode::Listing   => todo!()
+            Mode::Listing   => unreachable!()
         },
         config.clone(),
         fm.clone(),
@@ -125,20 +139,20 @@ async fn main() {
 
     if found_count == 0 {
         println!{
-            "[no todo's to {what}]",
+            "[no todoʼs to {what}]",
             what = match config.mode {
                 Mode::Purging   => "purge",
                 Mode::Reporting => "report",
-                Mode::Listing   => "list"
+                Mode::Listing   => unreachable!()
             }
         }
     } else {
         println!{
-            "[{processed_count}/{found_count}] todo's {what}",
+            "[{processed_count}/{found_count}] todoʼs {what}",
             what = match config.mode {
                 Mode::Purging   => "purged",
                 Mode::Reporting => "reported",
-                Mode::Listing   => "listed"
+                Mode::Listing   => unreachable!()
             }
         }
     }

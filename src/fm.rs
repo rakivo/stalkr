@@ -33,6 +33,7 @@ pub enum StalkrFileContents {
 impl StalkrFileContents {
     #[track_caller]
     #[inline(always)]
+    #[must_use] 
     pub fn as_buf_unchecked(&self) -> &Vec<u8> {
         match self {
             Self::Buf(b) => b,
@@ -42,6 +43,7 @@ impl StalkrFileContents {
 
     #[track_caller]
     #[inline(always)]
+    #[must_use] 
     pub fn as_mmap_unchecked(&self) -> &MmapMut {
         match self {
             Self::Mmap(m) => m,
@@ -75,11 +77,13 @@ pub struct StalkrFile {
 
 impl StalkrFile {
     #[inline(always)]
+    #[must_use] 
     pub fn new(upath: String, handle: File, meta: fs::Metadata) -> Self {
         Self { meta, upath, handle, tags: Vec::new(), contents: None }
     }
 
     #[inline(always)]
+    #[must_use] 
     pub fn read_contents_unchecked(&self) -> &StalkrFileContents {
         unsafe { self.contents.as_ref().unwrap_unchecked() }
     }
@@ -102,7 +106,7 @@ impl StalkrFile {
             None => {
                 let mut buf = Vec::with_capacity(file_size);
                 self.handle.read_to_end(&mut buf)?;
-                self.contents = Some(StalkrFileContents::Buf(buf))
+                self.contents = Some(StalkrFileContents::Buf(buf));
             }
         }
 
@@ -121,7 +125,7 @@ impl StalkrFile {
 
             let mmap = unsafe { opts.map_mut(&self.handle)? };
 
-            self.contents = Some(StalkrFileContents::Mmap(mmap))
+            self.contents = Some(StalkrFileContents::Mmap(mmap));
         }
 
         Ok(self.read_contents_unchecked().as_mmap_unchecked())
@@ -159,7 +163,7 @@ impl FileManager {
 
     #[inline(always)]
     pub fn add_tag_to_file(&self, file_id: FileId, tag: Tag) {
-        self.get_file_unchecked_mut(file_id).tags.push(tag)
+        self.get_file_unchecked_mut(file_id).tags.push(tag);
     }
 
     pub fn get_mmap_or_remmap_file_mut(

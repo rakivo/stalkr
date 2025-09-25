@@ -32,6 +32,7 @@ impl fmt::Display for Tag {
 
 impl Tag {
     #[inline(always)]
+    #[must_use] 
     pub fn commit_msg(&self) -> String {
         format!{
             "Add TODO{self}: {t}",
@@ -74,7 +75,7 @@ impl TagInserter {
                         InserterValue::Inserting(file_id) => {
                             if let Err(err) = inserter.insert_tags(file_id) {
                                 eprintln!{
-                                    "[tag] failed to insert tags for file {file_id:?}: {err:#}"
+                                    "[tag] failed to insert tagʼs for file {file_id:?}: {err:#}"
                                 }
                             }
                         }
@@ -88,7 +89,7 @@ impl TagInserter {
                                 &inserter.fm
                             ) {
                                 eprintln!{
-                                    "[tag] failed to purge todos for file {file_id:?}: {err:#}"
+                                    "[tag] failed to purge todoʼs for file {file_id:?}: {err:#}"
                                 }
                             }
                         }

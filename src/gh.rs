@@ -17,7 +17,7 @@ pub struct GithubApi;
 #[async_trait::async_trait]
 impl Api for GithubApi {
     #[inline(always)]
-    fn get_api_token_env_var(&self) -> &str {
+    fn get_api_token_env_var(&self) -> &'static str {
         "STALKR_GITHUB_TOKEN"
     }
 
@@ -91,7 +91,7 @@ impl Api for GithubApi {
                     .await
                     .map_err(Into::into)
                     .and_then(|j| {
-                        j.get("number").and_then(|v| v.as_u64()).ok_or_else(|| {
+                        j.get("number").and_then(serde_json::Value::as_u64).ok_or_else(|| {
                             anyhow::anyhow!("could not parse issue id")
                         })
                     });
@@ -99,7 +99,7 @@ impl Api for GithubApi {
                 match issue_number {
                     Ok(issue_number) => {
                         let file_id = todo.loc.file_id();
-                        let tag = Tag { todo, issue_number };
+                        let tag = Tag { issue_number, todo };
                         issuer.fm.add_tag_to_file(file_id, tag);
                     }
                     Err(e) => eprintln!("[failed to parse JSON response: {e}]")

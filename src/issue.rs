@@ -58,8 +58,8 @@ impl Issuer {
             let issues_api_url = Arc::from(config.api.get_issues_api_url(&config));
 
             Self {
-                issuer_tx,
                 issues_api_url,
+                issuer_tx,
                 found_count,
                 processed_count,
                 config,
@@ -83,7 +83,7 @@ impl Issuer {
                         stream::iter(todos.into_iter()).for_each_concurrent(4, |todo| {
                             let issuer = issuer.clone();
                             async move {
-                                issuer.post_todo(todo).await
+                                issuer.post_todo(todo).await;
                             }
                         }).await;
 
@@ -176,13 +176,13 @@ impl Issuer {
             // fake issue number
             let issue_number = rand::random::<u64>() % 10_000;
             let file_id = todo.loc.file_id();
-            let tag = Tag { todo, issue_number };
+            let tag = Tag { issue_number, todo };
             self.fm.add_tag_to_file(file_id, tag);
 
             return
         }
 
-        self.config.api.post_issue(self, todo).await
+        self.config.api.post_issue(self, todo).await;
     }
 }
 

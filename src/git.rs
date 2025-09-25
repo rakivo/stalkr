@@ -7,8 +7,15 @@ pub struct GitLocker {
     mutex: Mutex<()>,
 }
 
+impl Default for GitLocker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GitLocker {
     #[inline(always)]
+    #[must_use] 
     pub const fn new() -> Self {
         Self { mutex: Mutex::new(()) }
     }

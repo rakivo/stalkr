@@ -13,6 +13,7 @@ pub struct Purge {
 
 impl Purge {
     #[inline(always)]
+    #[must_use] 
     pub fn commit_msg(&self) -> String {
         format!{
             "Remove closed TODO{tag}: {title}",
@@ -41,6 +42,7 @@ impl DerefMut for Purges {
 
 impl Purges {
     #[inline(always)]
+    #[must_use] 
     pub fn with_capacity(n: usize, file_id: FileId) -> Self {
         Self { file_id, purges: Vec::with_capacity(n) }
     }

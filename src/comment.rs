@@ -10,11 +10,13 @@ pub enum Comment {
 
 impl Comment {
     #[inline(always)]
+    #[must_use] 
     pub const fn from_u8_unchecked(byte: u8) -> Self {
         unsafe { mem::transmute(byte) }
     }
 
     #[inline]
+    #[must_use] 
     pub fn is_line_a_comment(&self, h_: &str) -> Option<usize> {
         let h = h_.trim_start().as_bytes();
 

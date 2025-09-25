@@ -13,6 +13,9 @@ use crate::fm::{FileManager, StalkrFile};
 
 use std::str;
 use std::sync::Arc;
+use std::cell::RefCell;
+use std::io::Write as _;
+use std::fmt::Write as _;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -26,6 +29,7 @@ use tokio::sync::mpsc::UnboundedSender;
 const MMAP_THRESHOLD: usize = 1 * 1024 * 1024;
 
 pub enum StalkrTx {
+    None, // when Listing
     Issuer(UnboundedSender<IssueValue>),
     Prompter(UnboundedSender<Prompt>),
 }
@@ -38,6 +42,7 @@ pub struct Stalkr {
 }
 
 impl Stalkr {
+    #[inline]
     pub fn spawn(
         fm: Arc<FileManager>,
         config: Arc<Config>,
@@ -45,13 +50,15 @@ impl Stalkr {
         found_count: Arc<AtomicUsize>
     ) -> JoinHandle<()> {
         let me = Self::new(fm, config, stalkr_tx, found_count);
+        tokio::task::spawn_blocking(move || me.run())
+    }
 
-        tokio::task::spawn_blocking(move || {
-            dir_rec::DirRec::new(&*me.config.cwd)
-                .filter(|p| Stalkr::filter(p))
-                .par_bridge()
-                .for_each(|e| _ = me.stalk(e))
-        })
+    #[inline]
+    pub fn run(&self) {
+        dir_rec::DirRec::new(&*self.config.cwd)
+            .filter(|p| Stalkr::filter(p))
+            .par_bridge()
+            .for_each(|e| _ = self.stalk(e));
     }
 
     #[inline(always)]
@@ -61,7 +68,7 @@ impl Stalkr {
         stalkr_tx: StalkrTx,
         found_count: Arc<AtomicUsize>
     ) -> Self {
-        Self { fm, stalkr_tx, config, found_count }
+        Self { stalkr_tx, config, fm, found_count }
     }
 
     pub fn stalk(&self, file_path: PathBuf) -> anyhow::Result<()> {
@@ -96,6 +103,10 @@ impl Stalkr {
             self.search(&mmap[..], path_str, file_id)
         };
 
+        let Some(mode_value) = mode_value else {
+            return Ok(())
+        };
+
         if mode_value.is_empty() {
             return Ok(())
         }
@@ -106,20 +117,28 @@ impl Stalkr {
             StalkrTx::Issuer(issuer_tx) => {
                 issuer_tx
                     .send(mode_value)
-                    .expect("[could not send todos to issue worker]");
+                    .expect("[could not send todoʼs to issue worker]");
             }
 
             StalkrTx::Prompter(prompter_tx) => {
                 prompter_tx
                     .send(Prompt { mode_value })
-                    .expect("[could not send todos to prompter thread]");
+                    .expect("[could not send todoʼs to prompter thread]");
             }
+
+            StalkrTx::None => {}
         }
 
         Ok(())
     }
 
-    pub fn search(&self, haystack: &[u8], file_path: &str, file_id: FileId) -> ModeValue {
+    #[must_use] 
+    pub fn search(
+        &self,
+        haystack: &[u8],
+        file_path: &str,
+        file_id: FileId
+    ) -> Option<ModeValue> {
         let mut mode_value = ModeValue::new(self.config.mode, file_id);
 
         let mut byte_offset = 0;
@@ -252,29 +271,29 @@ impl Stalkr {
                 title: util::string_into_boxed_str_norealloc(title.to_owned()),
             };
 
-            match self.config.mode {
-                Mode::Reporting => if is_untagged {
-                    self.found_count.fetch_add(1, Ordering::SeqCst);
+            // file_id is not yet registered, so use file_path instead
+            let display_loc = || loc.display_from_str(file_path);
 
+            let try_get_issue_number = || {
+                let skip = "TODO(#".len();
+
+                let closing_paren_pos = content[skip..].find(')')?;
+
+                let issue_number = content[
+                    skip..skip + closing_paren_pos
+                ].parse::<u64>().ok()?;
+
+                Some(issue_number)
+            };
+
+            match (self.config.mode, mode_value.as_mut()) {
+                (Mode::Reporting, Some(mode_value)) => if is_untagged {
+                    self.found_count.fetch_add(1, Ordering::SeqCst);
                     mode_value.push_todo(todo);
                 }
 
-                Mode::Purging => if is_tagged {
-                    let skip = "TODO(#".len();
-
-                    // file_id is not yet registered, so use file_path instead
-                    let display_loc = || loc.display_from_str(file_path);
-
-                    let Some(closing_paren_pos) = content[skip..].find(')') else {
-                        eprintln!{
-                            "[{loc}: error: todo tag without closing paren]",
-                            loc = display_loc()
-                        };
-
-                        continue
-                    };
-
-                    let Ok(issue_number) = content[skip..skip + closing_paren_pos].parse::<u64>() else {
+                (Mode::Purging, Some(mode_value)) => if is_tagged {
+                    let Some(issue_number) = try_get_issue_number() else {
                         eprintln!{
                             "[{loc}: error: failed to parse issue number]",
                             loc = display_loc()
@@ -285,14 +304,14 @@ impl Stalkr {
 
                     let mut comment_ws_pos = rel_comment_start;
                     while comment_ws_pos > 0 && line[comment_ws_pos - 1] == b' ' {
-                        comment_ws_pos -= 1
+                        comment_ws_pos -= 1;
                     }
 
                     let global_comment_start = line_start + comment_ws_pos;
 
-                    let line_end = description_line_end.map(|dl| {
+                    let line_end = description_line_end.map_or(line_end, |dl| {
                         dl + byte_offset
-                    }).unwrap_or(line_end);
+                    });
 
                     let global_comment_end = if rel_comment_start == 0 {
                         // include newline in this line for the purge
@@ -303,12 +322,50 @@ impl Stalkr {
                     };
 
                     mode_value.push_purge(Purge {
-                        tag: Tag { todo, issue_number },
+                        tag: Tag { issue_number, todo },
                         range: global_comment_start..global_comment_end
                     });
                 }
 
-                Mode::Listing => unimplemented!()
+                (Mode::Listing, _) => {
+                    self.found_count.fetch_add(1, Ordering::SeqCst);
+
+                    thread_local! {
+                        static BUF: RefCell<String> = RefCell::new(String::with_capacity(1024));
+                    }
+
+                    BUF.with_borrow_mut(|buf| {
+                        buf.clear();
+
+                        if let Some(issue_number) = try_get_issue_number() {
+                            _ = writeln!{
+                                &mut *buf,
+                                "[{loc}] {title} #{issue_number}",
+                                loc = loc.display_from_str(file_path),
+                                title = todo.title
+                            };
+                        } else {
+                            _ = writeln!{
+                                &mut *buf,
+                                "[{loc}] {title}",
+                                loc = loc.display_from_str(file_path),
+                                title = todo.title
+                            };
+                        }
+
+                        if let Some(desc) = todo.description.as_ref() {
+                            _ = write!{
+                                &mut *buf,
+                                "   └── description:\n{d}\n",
+                                d = desc.display(9)
+                            };
+                        }
+
+                        _ = std::io::stdout().write_all(buf.as_bytes());
+                    });
+                }
+
+                _ => {}
             }
         }
 
@@ -316,6 +373,7 @@ impl Stalkr {
     }
 
     #[inline]
+    #[must_use] 
     pub fn filter(e: &Path) -> bool {
         pub const BINARY_EXTENSIONS: phf::Set::<&[u8]> = phf::phf_set! {
             b"exe", b"dll", b"bin", b"o", b"so", b"a", b"lib", b"elf", b"class",
@@ -339,8 +397,7 @@ impl Stalkr {
 
         let is_bin = e
             .extension()
-            .map(|ext| BINARY_EXTENSIONS.contains(ext.as_encoded_bytes()))
-            .unwrap_or(true);
+            .is_none_or(|ext| BINARY_EXTENSIONS.contains(ext.as_encoded_bytes()));
 
         !is_bin
     }

@@ -264,7 +264,7 @@ impl Prompter {
                 line = get_loc(item).line_number()
             }).collect::<Vec<_>>();
 
-        let max_width = prefixes.iter().map(|p| p.len()).max().unwrap_or(0);
+        let max_width = prefixes.iter().map(std::string::String::len).max().unwrap_or(0);
 
         for (i, (item, prefix)) in items.iter().zip(prefixes).enumerate() {
             let pad = max_width.saturating_sub(prefix.len());
@@ -302,9 +302,9 @@ impl Prompter {
 
     #[inline]
     fn print_help() {
-        const HELP_TEXT: &str = r#"
+        const HELP_TEXT: &str = r"
 HELP:
- • enter comma-separated indices to select todos, e.g. 1,3,5
+ • enter comma-separated indices to select todoʼs, e.g. 1,3,5
  • all -> select all
  • q   -> skip this file entirely
  • h   -> show this help screen
@@ -312,7 +312,7 @@ HELP:
      t        -> edit title       (e.g. 6t)
      d        -> edit description (e.g. 6d)
      td or dt -> edit both        (e.g. 4td)
-"#;
+";
 
         println!("{HELP_TEXT}");
         _ = util::ask_input("press <enter> to continue ..");

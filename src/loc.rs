@@ -8,13 +8,16 @@ pub struct Loc(pub FileId, pub u32);
 
 impl Loc {
     #[inline(always)]
+    #[must_use] 
     pub const fn file_id(&self) -> FileId { self.0 }
 
     #[inline(always)]
     #[doc(alias = "row")]
+    #[must_use] 
     pub const fn line_number(&self) -> u32 { self.1 }
 
     #[inline(always)]
+    #[must_use] 
     pub fn display_from_str<'a>(&self, file_path: &'a str) -> DisplayLoc<&'a str> {
         DisplayLoc {
             file_path: FilePathDisplay(file_path),

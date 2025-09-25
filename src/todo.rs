@@ -11,6 +11,7 @@ pub struct Description {
 impl Description {
     #[inline]
     #[allow(clippy::should_implement_trait)]
+    #[must_use] 
     pub fn from_str(s: &str) -> Self {
         let lines = s.lines().map(|l| {
             util::string_into_boxed_str_norealloc(l.trim().to_owned())
@@ -20,6 +21,7 @@ impl Description {
     }
 
     #[inline(always)]
+    #[must_use] 
     pub const fn display(&self, line_start_offset: usize) -> DisplayDescription<'_> {
         DisplayDescription { desc: self, line_start_offset }
     }
@@ -55,6 +57,7 @@ pub struct Todo {
 
 impl Todo {
     #[inline]
+    #[must_use] 
     pub fn as_json_value(&self) -> serde_json::Value {
         serde_json::json!({
             "title": self.title,
@@ -64,6 +67,7 @@ impl Todo {
 
     /// Returns: (todo's title, is todo tagged or not)
     #[inline]
+    #[must_use] 
     pub fn extract_todo_title(h: &str) -> (&str, bool) {
         let mut s = util::trim_comment_start(h).trim_start();
         let mut is_tagged = false;
@@ -108,6 +112,7 @@ impl Todo {
 
     /// Returns: (Description, index of the last newline in the last descriptionl line)
     #[inline]
+    #[must_use] 
     pub fn extract_todo_description(
         h: &[u8],
         comment: Comment

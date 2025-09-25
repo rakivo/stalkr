@@ -13,6 +13,7 @@ pub enum Mode {
 
 impl Mode {
     #[inline(always)]
+    #[must_use] 
     pub const fn doing_what(&self) -> &str {
         match self {
             Self::Purging   => "purging",
@@ -31,8 +32,9 @@ impl ModeValue {
     const RESERVE_CAP: usize = 4;
 
     #[inline(always)]
-    pub fn new(mode: Mode, file_id: FileId) -> Self {
-        match mode {
+    #[must_use] 
+    pub fn new(mode: Mode, file_id: FileId) -> Option<Self> {
+        Some(match mode {
             Mode::Purging => Self::Purging(
                 Purges::with_capacity(Self::RESERVE_CAP, file_id)
             ),
@@ -41,11 +43,12 @@ impl ModeValue {
                 Vec::with_capacity(Self::RESERVE_CAP)
             ),
 
-            _ => todo!()
-        }
+            Mode::Listing => return None
+        })
     }
 
     #[inline(always)]
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         match self {
             Self::Purging(v)   => v.is_empty(),

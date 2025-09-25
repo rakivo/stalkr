@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::borrow::Cow;
 use std::{mem, slice, str};
 use std::io::{self, Write};
@@ -9,6 +10,7 @@ pub fn clear_screen() {
 }
 
 #[inline]
+#[must_use]
 pub fn ask_input(prompt: &str) -> String {
     print!("{prompt} ");
     io::stdout().flush().unwrap();
@@ -19,6 +21,7 @@ pub fn ask_input(prompt: &str) -> String {
 }
 
 #[inline]
+#[must_use]
 pub fn trim_comment_start(s: &str) -> &str {
     s
         .trim_start()
@@ -30,6 +33,7 @@ pub fn trim_comment_start(s: &str) -> &str {
 }
 
 #[inline]
+#[must_use]
 pub fn is_line_a_comment(h_: &str) -> Option<usize> {
     let h = h_.trim_start();
 
@@ -48,6 +52,7 @@ pub fn is_line_a_comment(h_: &str) -> Option<usize> {
 
 #[inline]
 #[allow(unused)]
+#[must_use]
 pub fn extract_text_from_a_comment(h: &str) -> Option<&str> {
     let comment_end = is_line_a_comment(h)?;
     Some(h[comment_end..].trim())
@@ -55,6 +60,7 @@ pub fn extract_text_from_a_comment(h: &str) -> Option<&str> {
 
 // NOTE: this function leaks a little bit of memory but its 2025 just buy more RAM
 #[inline]
+#[must_use]
 pub fn vec_into_boxed_slice_norealloc<T>(mut v: Vec<T>) -> Box<[T]> {
     let len = v.len();
     let ptr = v.as_mut_ptr();
@@ -68,12 +74,13 @@ pub fn vec_into_boxed_slice_norealloc<T>(mut v: Vec<T>) -> Box<[T]> {
 
 // NOTE: this function does too
 #[inline]
+#[must_use]
 pub fn string_into_boxed_str_norealloc(s: String) -> Box<str> {
     let s = s.into_bytes();
     let s = vec_into_boxed_slice_norealloc(s);
 
     let len = s.len();
-    let ptr = Box::into_raw(s) as _;
+    let ptr = Box::into_raw(s).cast();
 
     unsafe {
         let slice = slice::from_raw_parts_mut(ptr, len);
@@ -85,6 +92,7 @@ pub fn string_into_boxed_str_norealloc(s: String) -> Box<str> {
     }
 }
 
+#[must_use]
 pub fn balance_concurrency(cpu_count: usize) -> (usize, usize) {
     let cpu_count = cpu_count.max(2);
 
@@ -107,6 +115,7 @@ pub fn balance_concurrency(cpu_count: usize) -> (usize, usize) {
     (rayon_threads, max_concurrency)
 }
 
+#[must_use]
 pub fn parse_owner_repo(url: &str) -> Option<(String, String)> {
     // find the "github.com/" or "github.com:" pivot
     let pivot = url.find("github.com/").or_else(|| url.find("github.com:"))?;
@@ -119,13 +128,17 @@ pub fn parse_owner_repo(url: &str) -> Option<(String, String)> {
     let mut repo = parts.next()?.to_owned();
 
     // strip optional ".git" suffix
-    if repo.ends_with(".git") {
+    if Path::new(&repo)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("git"))
+    {
         repo.truncate(repo.len() - 4);
     }
 
     Some((owner, repo))
 }
 
+#[must_use]
 pub fn truncate_path(path: &str, line_number: u32, max_len: usize) -> Cow<'_, str> {
     let line_number_len = line_number.to_string().len() + 1; // ':'
 

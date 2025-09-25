@@ -45,7 +45,7 @@ impl Config {
             (owner.to_owned(), repo.to_owned())
         } else {
             match Self::get_git_origin_url(
-                cli.directory.to_owned(),
+                cli.directory.clone(),
                 remote
             ).as_deref().and_then(util::parse_owner_repo) {
                 Some(x) => x,
@@ -55,7 +55,7 @@ impl Config {
             }
         };
 
-        let cwd = Box::new(cli.directory.to_owned());
+        let cwd = Box::new(cli.directory.clone());
 
         let mode = cli.mode();
 
@@ -70,18 +70,19 @@ impl Config {
         let git_locker = Arc::new(GitLocker::new());
 
         Ok(Self {
-            api,
             owner,
             repo,
             token,
             cwd,
             mode,
-            found_closed_todo,
-            simulate_reporting,
+            api,
             git_locker,
+            simulate_reporting,
+            found_closed_todo,
         })
     }
 
+    #[must_use] 
     pub fn get_git_origin_url(mut dir: PathBuf, remote: &str) -> Option<String> {
         loop {
             let config = dir.join(".git/config");
@@ -95,7 +96,7 @@ impl Config {
                     if line.starts_with("[remote \"") {
                         in_origin = line.contains(&format!{
                             "\"{remote}\""
-                        })
+                        });
                     } else if in_origin && line.starts_with("url") {
                         return line.split('=')
                             .nth(1)
