@@ -9,6 +9,7 @@ repository = "https://github.com/rakivo/stalkr"
 keywords = ["todo", "cli", "code", "search", "tool"]
 description = "Worker-based TODO manager in Rust"
 categories = ["command-line-utilities", "development-tools"]
+exclude = ["assets/*", "README.md"]
 
 [features]
 default = ["mimalloc"]
