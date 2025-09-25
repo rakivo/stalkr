@@ -22,17 +22,19 @@ pub enum PrompterTx {
 }
 
 impl PrompterTx {
-    fn as_issuer_unchecked(&self) -> &UnboundedSender<IssueValue> {
+    #[inline(always)]
+    const fn as_issuer_unchecked(&self) -> &UnboundedSender<IssueValue> {
         match self {
             Self::Issuer(i) => i,
-            _ => unreachable!()
+            Self::Inserter(_) => unreachable!()
         }
     }
 
-    fn as_inserter_unchecked(&self) -> &UnboundedSender<InserterValue> {
+    #[inline(always)]
+    const fn as_inserter_unchecked(&self) -> &UnboundedSender<InserterValue> {
         match self {
             Self::Inserter(i) => i,
-            _ => unreachable!()
+            Self::Issuer(_) => unreachable!()
         }
     }
 }
@@ -67,9 +69,8 @@ impl Prompter {
         while let Some(prompt) = prompter_rx.recv().await {
             match prompt.mode_value {
                 ModeValue::Reporting(mut todos) => {
-                    let file_id = match todos.first().map(|t| t.loc.file_id()) {
-                        Some(id) => id,
-                        None => continue,
+                    let Some(file_id) = todos.first().map(|t| t.loc.file_id()) else {
+                        continue
                     };
 
                     let file_name = self.fm.get_file_path_unchecked(file_id);
@@ -79,7 +80,7 @@ impl Prompter {
 
                         self.print_header(&project_url, &file_name);
 
-                        self.print_todos_with_descriptions(
+                        Self::print_todos_with_descriptions(
                             &todos,
                             |todo| &todo.loc,
                             |todo| &todo.title,
@@ -167,17 +168,19 @@ impl Prompter {
                     };
 
                     if let Some(to_report) = to_report {
-                        self.tx
+                        if self.tx
                             .as_issuer_unchecked()
                             .send(ModeValue::Reporting(to_report))
-                            .expect("could not send todos to issue worker");
+                            .is_err()
+                        {
+                            eprintln!("[could not send todos to issue worker]");
+                        }
                     }
                 }
 
                 ModeValue::Purging(mut purges) => {
-                    let file_id = match purges.first().map(|p| p.tag.todo.loc.file_id()) {
-                        Some(id) => id,
-                        None => continue,
+                    let Some(file_id) = purges.first().map(|p| p.tag.todo.loc.file_id()) else {
+                        continue
                     };
 
                     let file_name = self.fm.get_file_path_unchecked(file_id);
@@ -187,7 +190,7 @@ impl Prompter {
 
                         self.print_header(&project_url, &file_name);
 
-                        self.print_todos_with_descriptions(
+                        Self::print_todos_with_descriptions(
                             &purges,
                             |purge| &purge.tag.todo.loc,
                             |purge| &purge.tag.todo.title,
@@ -225,10 +228,13 @@ impl Prompter {
                     };
 
                     if let Some(list) = to_delete {
-                        self.tx
+                        if self.tx
                             .as_inserter_unchecked()
                             .send(InserterValue::Purging(list))
-                            .expect("could not send purges to issue worker");
+                            .is_err()
+                        {
+                            eprintln!("[could not send todos to purging worker]");
+                        }
                     }
                 }
             }
@@ -243,7 +249,6 @@ impl Prompter {
     }
 
     fn print_todos_with_descriptions<T, FLoc, FTitle, FDesc>(
-        &self,
         items: &[T],
         get_loc: FLoc,
         get_title: FTitle,

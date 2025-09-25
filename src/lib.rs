@@ -5,6 +5,9 @@
     dead_code
 )]
 #![allow(
+    clippy::collapsible_if,
+    clippy::items_after_statements,
+    clippy::struct_field_names,
     clippy::inline_always,
     clippy::redundant_field_names,
     clippy::multiple_crate_versions,

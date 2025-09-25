@@ -32,7 +32,7 @@ impl fmt::Display for Tag {
 
 impl Tag {
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn commit_msg(&self) -> String {
         format!{
             "Add TODO{self}: {t}",

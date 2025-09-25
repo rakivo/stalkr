@@ -27,7 +27,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(cli: Cli) -> anyhow::Result::<Self> {
+    pub fn new(cli: &Cli) -> anyhow::Result::<Self> {
         let api = Box::new(crate::gh::GithubApi);
 
         let Ok(token) = api.get_api_token() else {
@@ -82,7 +82,7 @@ impl Config {
         })
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn get_git_origin_url(mut dir: PathBuf, remote: &str) -> Option<String> {
         loop {
             let config = dir.join(".git/config");

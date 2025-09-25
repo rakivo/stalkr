@@ -13,11 +13,11 @@ use crate::fm::{FileManager, StalkrFile};
 
 use std::str;
 use std::sync::Arc;
+use std::path::Path;
 use std::cell::RefCell;
 use std::io::Write as _;
 use std::fmt::Write as _;
 use std::fs::OpenOptions;
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rayon::prelude::*;
@@ -29,7 +29,7 @@ use tokio::sync::mpsc::UnboundedSender;
 const MMAP_THRESHOLD: usize = 1 * 1024 * 1024;
 
 pub enum StalkrTx {
-    None, // when Listing
+    None, // when Listing we don't need to send anything
     Issuer(UnboundedSender<IssueValue>),
     Prompter(UnboundedSender<Prompt>),
 }
@@ -58,7 +58,7 @@ impl Stalkr {
         dir_rec::DirRec::new(&*self.config.cwd)
             .filter(|p| Stalkr::filter(p))
             .par_bridge()
-            .for_each(|e| _ = self.stalk(e));
+            .for_each(|e| _ = self.stalk(e.as_path()));
     }
 
     #[inline(always)]
@@ -71,15 +71,15 @@ impl Stalkr {
         Self { stalkr_tx, config, fm, found_count }
     }
 
-    pub fn stalk(&self, file_path: PathBuf) -> anyhow::Result<()> {
-        if !self.fm.mark_seen(&file_path) {
+    pub fn stalk(&self, file_path: &Path) -> anyhow::Result<()> {
+        if !self.fm.mark_seen(file_path) {
             return Ok(())
         }
 
         let file = OpenOptions::new()
             .read(true)
             .write(true)
-            .open(&file_path)?;
+            .open(file_path)?;
 
         let meta = file.metadata()?;
 
@@ -115,15 +115,15 @@ impl Stalkr {
 
         match &self.stalkr_tx {
             StalkrTx::Issuer(issuer_tx) => {
-                issuer_tx
-                    .send(mode_value)
-                    .expect("[could not send todoʼs to issue worker]");
+                if issuer_tx.send(mode_value).is_err() {
+                    eprintln!("[could not send todoʼs to issue worker]");
+                }
             }
 
             StalkrTx::Prompter(prompter_tx) => {
-                prompter_tx
-                    .send(Prompt { mode_value })
-                    .expect("[could not send todoʼs to prompter thread]");
+                if prompter_tx.send(Prompt { mode_value }).is_err() {
+                    eprintln!("[could not send todoʼs to prompter thread]");
+                }
             }
 
             StalkrTx::None => {}
@@ -132,7 +132,7 @@ impl Stalkr {
         Ok(())
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn search(
         &self,
         haystack: &[u8],
@@ -174,10 +174,7 @@ impl Stalkr {
                     &line[comment_scan_index..]
                 );
 
-                let rel = match rel {
-                    Some(i) => i,
-                    None => break,
-                };
+                let Some(rel) = rel else { break };
 
                 let index = comment_scan_index + rel;
 
@@ -192,9 +189,8 @@ impl Stalkr {
                 comment_scan_index = index + 1; // continue searching after the found byte
             }
 
-            let (rel_comment_start, marker_len) = match found_comment {
-                Some(v) => v,
-                None => continue // no comment on this line
+            let Some((rel_comment_start, marker_len)) = found_comment else {
+                continue // no comment on this line
             };
 
             // the part after the comment marker, BEFORE trimming spaces
@@ -373,7 +369,7 @@ impl Stalkr {
     }
 
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn filter(e: &Path) -> bool {
         pub const BINARY_EXTENSIONS: phf::Set::<&[u8]> = phf::phf_set! {
             b"exe", b"dll", b"bin", b"o", b"so", b"a", b"lib", b"elf", b"class",

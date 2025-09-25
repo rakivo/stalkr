@@ -33,21 +33,21 @@ pub enum StalkrFileContents {
 impl StalkrFileContents {
     #[track_caller]
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn as_buf_unchecked(&self) -> &Vec<u8> {
         match self {
             Self::Buf(b) => b,
-            _ => unsafe { hint::unreachable_unchecked() }
+            Self::Mmap(_) => unsafe { hint::unreachable_unchecked() }
         }
     }
 
     #[track_caller]
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn as_mmap_unchecked(&self) -> &MmapMut {
         match self {
             Self::Mmap(m) => m,
-            _ => unsafe { hint::unreachable_unchecked() }
+            Self::Buf(_) => unsafe { hint::unreachable_unchecked() }
         }
     }
 
@@ -56,7 +56,7 @@ impl StalkrFileContents {
     pub fn as_mmap_unchecked_mut(&mut self) -> &mut MmapMut {
         match self {
             Self::Mmap(m) => m,
-            _ => unsafe { hint::unreachable_unchecked() }
+            Self::Buf(_) => unsafe { hint::unreachable_unchecked() }
         }
     }
 }
@@ -77,13 +77,13 @@ pub struct StalkrFile {
 
 impl StalkrFile {
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn new(upath: String, handle: File, meta: fs::Metadata) -> Self {
         Self { meta, upath, handle, tags: Vec::new(), contents: None }
     }
 
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn read_contents_unchecked(&self) -> &StalkrFileContents {
         unsafe { self.contents.as_ref().unwrap_unchecked() }
     }

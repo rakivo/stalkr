@@ -6,17 +6,17 @@ use std::io::{self, Write};
 #[inline]
 pub fn clear_screen() {
     print!("\x1B[2J\x1B[1;1H");
-    io::stdout().flush().unwrap();
+    _ = io::stdout().flush();
 }
 
 #[inline]
 #[must_use]
 pub fn ask_input(prompt: &str) -> String {
     print!("{prompt} ");
-    io::stdout().flush().unwrap();
+    _ = io::stdout().flush();
 
     let mut buf = String::new();
-    io::stdin().read_line(&mut buf).unwrap();
+    io::stdin().read_line(&mut buf).expect("[couldn't ask input]");
     buf
 }
 
@@ -58,7 +58,8 @@ pub fn extract_text_from_a_comment(h: &str) -> Option<&str> {
     Some(h[comment_end..].trim())
 }
 
-// NOTE: this function leaks a little bit of memory but its 2025 just buy more RAM
+// NOTE: drops any excess Vec capacity without freeing it.
+//       This "leaks" a little memory, proportional to (capacity - len).
 #[inline]
 #[must_use]
 pub fn vec_into_boxed_slice_norealloc<T>(mut v: Vec<T>) -> Box<[T]> {
@@ -72,7 +73,8 @@ pub fn vec_into_boxed_slice_norealloc<T>(mut v: Vec<T>) -> Box<[T]> {
     }
 }
 
-// NOTE: this function does too
+// NOTE: drops any excess Vec capacity without freeing it.
+//       This "leaks" a little memory, proportional to (capacity - len).
 #[inline]
 #[must_use]
 pub fn string_into_boxed_str_norealloc(s: String) -> Box<str> {
@@ -204,7 +206,7 @@ macro_rules! make_spawn {
         ) -> Self
         $body
 
-        /// Spawn the issuing loop and return its JoinHandle.
+        /// Spawn the issuing loop and return its `JoinHandle`.
         ///
         /// Takes *all* of `new`'s parameters, plus the `issue_rx` at the end.
         #[allow(unused)]

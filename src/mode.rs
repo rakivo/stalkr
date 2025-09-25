@@ -13,7 +13,7 @@ pub enum Mode {
 
 impl Mode {
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub const fn doing_what(&self) -> &str {
         match self {
             Self::Purging   => "purging",
@@ -32,7 +32,7 @@ impl ModeValue {
     const RESERVE_CAP: usize = 4;
 
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn new(mode: Mode, file_id: FileId) -> Option<Self> {
         Some(match mode {
             Mode::Purging => Self::Purging(
@@ -48,7 +48,7 @@ impl ModeValue {
     }
 
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         match self {
             Self::Purging(v)   => v.is_empty(),
@@ -61,7 +61,7 @@ impl ModeValue {
     pub fn push_purge(&mut self, purge: Purge) {
         match self {
             Self::Purging(ps) => ps.push(purge),
-            _ => unsafe { hint::unreachable_unchecked() }
+            Self::Reporting(_) => unsafe { hint::unreachable_unchecked() }
         }
     }
 
@@ -70,7 +70,7 @@ impl ModeValue {
     pub fn push_todo(&mut self, todo: Todo) {
         match self {
             Self::Reporting(todos) => todos.push(todo),
-            _ => unsafe { hint::unreachable_unchecked() }
+            Self::Purging(_) => unsafe { hint::unreachable_unchecked() }
         }
     }
 }

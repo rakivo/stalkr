@@ -87,9 +87,9 @@ impl Issuer {
                             }
                         }).await;
 
-                        inserter_tx
-                            .send(InserterValue::Inserting(file_id))
-                            .expect("[failed to send file id to inserting worker]");
+                        if inserter_tx.send(InserterValue::Inserting(file_id)).is_err() {
+                            eprintln!("[failed to send file id to inserting worker]");
+                        }
                     }
 
                     (ModeValue::Purging(purges), IssuerTx::Prompter(prompter_tx)) => {
@@ -121,9 +121,9 @@ impl Issuer {
 
                         let mode_value = ModeValue::Purging(purges);
 
-                        prompter_tx
-                            .send(Prompt { mode_value })
-                            .expect("[failed to send file id to inserting worker]");
+                        if prompter_tx.send(Prompt { mode_value }).is_err() {
+                            eprintln!("[failed to send file id to inserting worker]");
+                        }
                     }
 
                     _ => unreachable!("unreachable tx-value combination")

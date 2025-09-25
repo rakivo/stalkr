@@ -11,28 +11,42 @@ use stalkr::prompt::{Prompter, PrompterTx};
 
 use std::thread;
 use std::sync::Arc;
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use clap::Parser;
 use tokio::sync::mpsc::unbounded_channel;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    let config = match Config::new(cli) {
+    let config = match Config::new(&cli) {
         Ok(cfg) => Arc::new(cfg),
-        Err(e) => panic!("[{e}]")
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE
+        }
     };
 
-    let num_cpus = thread::available_parallelism().unwrap().get();
+    let num_cpus = thread::available_parallelism()
+        .expect("couldn't get num cpus")
+        .get();
 
-    let (rayon_threads, max_http_concurrency) = stalkr::util::balance_concurrency(num_cpus);
+    let (
+        rayon_threads,
+        max_http_concurrency
+    ) = stalkr::util::balance_concurrency(num_cpus);
 
-    rayon::ThreadPoolBuilder::new()
+    // threadpool for stalkr workers
+    if rayon::ThreadPoolBuilder::new()
         .num_threads(rayon_threads)
         .build_global()
-        .expect("[could not build global rayon threadpool]");
+        .is_err()
+    {
+        eprintln!("[could not build global rayon threadpool]");
+        return ExitCode::FAILURE
+    }
 
     // ---------------------- todo's counts ----------------------
 
@@ -55,7 +69,7 @@ async fn main() {
         let found_count = found_count.load(Ordering::Acquire);
         println!("[found {found_count} todoʼs]");
 
-        return
+        return ExitCode::SUCCESS
     }
 
     // ---------------------- worker channels ----------------------
@@ -156,4 +170,6 @@ async fn main() {
             }
         }
     }
+
+    ExitCode::SUCCESS
 }
