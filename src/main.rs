@@ -1,4 +1,3 @@
-// TODO(#36): git synchronization to prevent git lockfile races
 // TODO(#32): Implement closing mode
 
 use stalkr::cli::Cli;
