@@ -3,6 +3,7 @@ name = "stalkr"
 version = "0.1.0"
 edition = "2024"
 authors = ["Mark Tyrkba <marktyrkba456@gmail.com>"]
+readme = "README.crates-io.md"
 license = "MIT"
 repository = "https://github.com/rakivo/stalkr"
 keywords = ["todo", "cli", "code", "search", "tool"]
