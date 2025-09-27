@@ -3,8 +3,6 @@
 > [!Warning]
 > stalkr is UNFINISHED
 
-![](https://github.com/rakivo/stalkr/blob/master/assets/pipeline-diagram.png)
-
 # Quick start
 
 ```console
