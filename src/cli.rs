@@ -63,7 +63,6 @@ impl Cli {
 #[derive(Subcommand)]
 #[clap(about = "Subcommands for managing TODOs")]
 pub enum Commands {
-    /// NOTE: Not implemented yet
     /// Lists all TODOs
     #[clap(about = "Lists TODO comments found in a directory recursively")]
     List {
@@ -76,7 +75,6 @@ pub enum Commands {
         reported: bool,
     },
 
-    /// NOTE: Not implemented yet
     /// Reports all TODOs as GitHub issues
     #[clap(about = "Reports TODO comments as GitHub issues")]
     Report {
@@ -99,9 +97,7 @@ pub enum Commands {
         simulate: bool,
     },
 
-    /// NOTE: Not implemented yet
     /// Removes all reported TODOs that refer to closed issues
-    #[allow(unused)]
     #[clap(about = "Removes TODO comments linked to closed GitHub issues")]
     Purge {
         #[clap(long, default_value = Cli::DEFAULT_REMOTE)]

@@ -214,7 +214,7 @@ macro_rules! make_spawn {
             $($arg_name : $arg_ty, ) *
             rx: tokio::sync::mpsc::UnboundedReceiver<$rx_inner_ty>
         ) -> tokio::task::JoinHandle<()> {
-            let me = Self::new($($arg_name), *);
+            let mut me = Self::new($($arg_name), *);
             tokio::spawn(async move { me.run(rx).await; })
         }
     };

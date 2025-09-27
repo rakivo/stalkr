@@ -14,7 +14,7 @@ pub enum Mode {
 impl Mode {
     #[must_use]
     #[inline(always)]
-    pub const fn to_string_past(&self) -> &str {
+    pub const fn to_str_past(&self) -> &str {
         match self {
             Self::Purging   => "purged",
             Self::Reporting => "reported",
@@ -24,7 +24,7 @@ impl Mode {
 
     #[must_use]
     #[inline(always)]
-    pub const fn to_string_present(&self) -> &str {
+    pub const fn to_str_present(&self) -> &str {
         match self {
             Self::Purging   => "purge",
             Self::Reporting => "report",
@@ -34,7 +34,7 @@ impl Mode {
 
     #[must_use]
     #[inline(always)]
-    pub const fn to_string_actioning(&self) -> &str {
+    pub const fn to_str_actioning(&self) -> &str {
         match self {
             Self::Purging   => "purging",
             Self::Reporting => "reporting",
@@ -48,11 +48,11 @@ impl Mode {
         processed: usize
     ) {
         if found == 0 {
-            println!("[no todoʼs to {}]", self.to_string_present());
+            println!("[no todoʼs to {}]", self.to_str_present());
         } else {
             println! {
                 "[{processed}/{found}] todoʼs {what}",
-                what = self.to_string_past()
+                what = self.to_str_past()
             }
         }
     }

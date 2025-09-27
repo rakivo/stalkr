@@ -9,6 +9,7 @@ use crate::issue::IssueValue;
 use crate::tag::InserterValue;
 
 use std::sync::Arc;
+use std::fmt::Write;
 use std::sync::atomic::{Ordering, AtomicUsize};
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -43,12 +44,20 @@ impl PrompterTx {
     }
 }
 
+macro_rules! write_buf {
+    ($self:expr, $($tt:tt)*) => {
+        write!(&mut $self.stdout_buf, $($tt)*)
+    }
+}
+
 pub struct Prompter {
     pub fm: Arc<FileManager>,
     pub config: Arc<Config>,
     pub tx: PrompterTx,
     // for Listing mode
     pub processed_count: Arc<AtomicUsize>,
+
+    stdout_buf: String
 }
 
 impl Prompter {
@@ -65,11 +74,17 @@ impl Prompter {
             tx: PrompterTx,
             processed_count: Arc<AtomicUsize>
         ) -> Self {
-            Self { fm, config, tx, processed_count }
+            Self {
+                fm,
+                config,
+                tx,
+                processed_count,
+                stdout_buf: String::with_capacity(1024)
+            }
         }
     }
 
-    pub async fn run(&self, mut prompter_rx: UnboundedReceiver<Prompt>) {
+    pub async fn run(&mut self, mut prompter_rx: UnboundedReceiver<Prompt>) {
         let project_url      = self.config.api.get_project_url(&self.config);
         let selection_string = Self::get_selection_string();
 
@@ -80,14 +95,16 @@ impl Prompter {
                         continue
                     };
 
-                    let file_name = self.fm.get_file_path_unchecked(file_id);
+                    let file_name = self.fm.get_file_path_unchecked(
+                        file_id
+                    ).to_owned();
 
                     let to_report = loop {
                         util::clear_screen();
 
                         self.print_header(&project_url, &file_name);
 
-                        Self::print_todos_with_descriptions(
+                        self.print_todos_with_descriptions(
                             &todos,
                             |todo| &todo.loc,
                             |todo| &todo.title,
@@ -192,10 +209,12 @@ impl Prompter {
 
                     util::clear_screen();
 
-                    let file_name = self.fm.get_file_path_unchecked(file_id);
-                    self.print_header(&project_url, &file_name);
+                    {
+                        let file_name = self.fm.get_file_path_unchecked(file_id);
+                        self.print_header(&project_url, &file_name);
+                    }
 
-                    Self::print_todos_with_descriptions(
+                    self.print_todos_with_descriptions(
                         &todos,
                         |todo| &todo.loc,
                         |todo| &todo.title,
@@ -205,7 +224,7 @@ impl Prompter {
                     self.processed_count.fetch_add(todos.len(), Ordering::SeqCst);
 
                     println!();
-                    Self::print_enter_to_continue();
+                    Self::print_enter_to("move onto the next file");
                 }
 
                 ModeValue::Purging(mut purges) => {
@@ -213,14 +232,16 @@ impl Prompter {
                         continue
                     };
 
-                    let file_name = self.fm.get_file_path_unchecked(file_id);
+                    let file_name = self.fm.get_file_path_unchecked(
+                        file_id
+                    ).to_owned();
 
                     let to_delete = loop {
                         util::clear_screen();
 
                         self.print_header(&project_url, &file_name);
 
-                        Self::print_todos_with_descriptions(
+                        self.print_todos_with_descriptions(
                             &purges,
                             |purge| &purge.tag.todo.loc,
                             |purge| &purge.tag.todo.title,
@@ -273,12 +294,23 @@ impl Prompter {
 
     #[inline]
     fn print_header(&self, project_url: &str, file_name: &str) {
-        println!("[{what} mode]\n", what = self.config.mode.to_string_actioning());
-        println!("[detected project]: {project_url}\n");
-        println!("[todoʼs from]: {file_name}\n");
+        println!{
+            "\
+                [{} mode]\
+                \n\n\
+                [detected project]: {}\
+                \n\n\
+                [todoʼs from]: {}\
+                \n\
+            ",
+            self.config.mode.to_str_actioning(),
+            project_url,
+            file_name,
+        };
     }
 
     fn print_todos_with_descriptions<T, FLoc, FTitle, FDesc>(
+        &mut self,
         items: &[T],
         get_loc: FLoc,
         get_title: FTitle,
@@ -289,31 +321,29 @@ impl Prompter {
         FTitle : Fn(&T) -> &str,
         FDesc  : Fn(&T) -> Option<&Description>,
     {
-        // build all prefixes and find max width to pad all titles
-        let prefixes = items
+        let max_width = items
             .iter()
             .enumerate()
-            .map(|(i, item)| format!{
-                "{n}. [line {line}]:",
-                n = i + 1,
-                line = get_loc(item).line_number()
-            }).collect::<Vec<_>>();
+            .map(|(i, item)| {
+                let n_len = (i + 1).to_string().len();
+                let line_len = get_loc(item).line_number().to_string().len();
+                n_len + 2 + 6 + line_len + 2 // "N. [line X]:"
+            }).max().unwrap_or(0);
 
-        let max_width = prefixes.iter().map(std::string::String::len).max().unwrap_or(0);
+        for (i, item) in items.iter().enumerate() {
+            self.stdout_buf.clear();
 
-        for (i, (item, prefix)) in items.iter().zip(prefixes).enumerate() {
-            let pad = max_width.saturating_sub(prefix.len());
+            write_buf!(self, "{}. [line {}]:", i + 1, get_loc(item).line_number()).unwrap();
 
-            println!{
-                "{prefix}{tab} {title}",
-                prefix = prefix,
-                tab = " ".repeat(pad),
-                title = get_title(item),
-            };
+            let pad = max_width.saturating_sub(self.stdout_buf.len()).min(1);
+            print!("{}", self.stdout_buf);
+            for _ in 0..=pad {
+                print!(" ");
+            }
+            println!("{}", get_title(item));
 
             if let Some(desc) = get_description(item) {
-                println!("   └── description:\n{d}", d = desc.display(9));
-                if i < items.len() - 1 { println!() }
+                println!("   └── description:\n{}", desc.display(9));
             }
         }
     }
@@ -336,8 +366,8 @@ impl Prompter {
     }
 
     #[inline]
-    fn print_enter_to_continue() {
-        _ = util::ask_input("press <enter> to continue ..");
+    fn print_enter_to(to: &str) {
+        _ = util::ask_input(&format!("press <enter> to {to} .."));
     }
 
     #[inline]
@@ -356,6 +386,6 @@ HELP:
 ";
 
         println!("{HELP_TEXT}");
-        Self::print_enter_to_continue();
+        Self::print_enter_to("continue");
     }
 }
