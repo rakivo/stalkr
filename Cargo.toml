@@ -33,9 +33,9 @@ ctrlc          = { version = "=3.5.0",   default-features = false }
 mimalloc       = { version = "=0.1.47",  default-features = false, optional = true }
 phf            = { version = "=0.12.1",  default-features = false, features = ["macros"] }
 rand           = { version = "=0.9.2",   default-features = false, features = ["thread_rng"] }
+surf           = { version = "=2.3",     default-features = false, features = ["h1-client-rustls"] }
 clap           = { version = "=4.5.41",  default-features = false, features = ["std", "help", "derive"] }
 tokio          = { version = "=1.46.1",  default-features = false, features = ["macros", "rt-multi-thread"] }
-reqwest        = { version = "=0.12.22", default-features = false, features = ["json", "blocking", "rustls-tls"] }
 
 [profile.dev]
 opt-level = 0

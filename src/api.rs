@@ -11,7 +11,7 @@ pub trait Api: Send + Sync {
     fn get_issues_api_url(&self, config: &Config) -> String;
     fn get_issue_api_url(&self, config: &Config, issue: &Issue) -> String;
 
-    fn make_client(&self, config: &Config) -> reqwest::Result<reqwest::Client>;
+    fn make_client(&self, config: &Config) -> surf::Result<surf::Client>;
 
     async fn post_issue(&self, issuer: &Issuer, todo: Todo);
     async fn check_if_issue_is_closed(&self, issuer: &Issuer, issue: &Issue) -> bool;

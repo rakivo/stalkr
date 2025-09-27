@@ -36,7 +36,7 @@ pub struct Issuer {
     pub config: Arc<Config>,
     pub fm: Arc<FileManager>,
     pub max_http_concurrency: usize,
-    pub rq_client: reqwest::Client
+    pub rq_client: surf::Client
 }
 
 impl Issuer {

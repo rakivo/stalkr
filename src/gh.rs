@@ -5,12 +5,10 @@ use crate::config::Config;
 use crate::issue::{Issue, Issuer};
 
 use std::env;
-use std::error::Error;
-use std::time::Duration;
 use std::sync::atomic::Ordering;
 
+use surf::StatusCode;
 use serde_json::Value;
-use reqwest::StatusCode;
 
 pub struct GithubApi;
 
@@ -52,55 +50,44 @@ impl Api for GithubApi {
     }
 
     #[inline]
-    fn make_client(&self, config: &Config) -> reqwest::Result<reqwest::Client> {
-        use reqwest::Client;
-        use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
-
-        Client::builder()
-            .pool_max_idle_per_host(8)
-            .user_agent("stalkr-todo-bot")
-            .pool_idle_timeout(Duration::from_secs(90))
-            .default_headers(HeaderMap::from_iter([
-                (
-                    AUTHORIZATION,
-                    HeaderValue::from_str(&format!{
-                        "token {token}",
-                        token = config.token()
-                    }).unwrap()
-                ),
-                (
-                    ACCEPT,
-                    "application/vnd.github.v3+json".parse().unwrap()
-                )
-            ])).build()
+    fn make_client(&self, _config: &Config) -> surf::Result<surf::Client> {
+        Ok(surf::Client::new())
     }
 
     async fn post_issue(&self, issuer: &Issuer, todo: Todo) {
         let body = todo.as_json_value();
 
-        let rs = issuer.rq_client
+        let rq = match issuer.rq_client
             .post(&*issuer.issues_api_url)
-            .json(&body)
-            .send()
-            .await;
+            .header("Authorization", format!("token {}", issuer.config.token()))
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("User-Agent", "stalkr-todo-bot")
+            .body_json(&body)
+        {
+            Ok(rq) => rq,
+            Err(e) => {
+                eprintln!("[error creating request: {e}]");
+                return
+            }
+        };
 
-        match rs {
-            Ok(r) if r.status().is_success() => {
-                let issue_number = r
-                    .json::<Value>()
-                    .await
-                    .map_err(Into::into)
-                    .and_then(|j| {
-                        j.get("number").and_then(serde_json::Value::as_u64).ok_or_else(|| {
-                            anyhow::anyhow!("could not parse issue id")
-                        })
-                    });
+        match rq.await {
+            Ok(mut r) if r.status().is_success() => {
+                match r.body_json::<Value>().await {
+                    Ok(json) => {
+                        let issue_number = json
+                            .get("number")
+                            .and_then(serde_json::Value::as_u64)
+                            .ok_or_else(|| anyhow::anyhow!("could not parse issue id"));
 
-                match issue_number {
-                    Ok(issue_number) => {
-                        let file_id = todo.loc.file_id();
-                        let tag = Tag { issue_number, todo };
-                        issuer.fm.add_tag_to_file(file_id, tag);
+                        match issue_number {
+                            Ok(issue_number) => {
+                                let file_id = todo.loc.file_id();
+                                let tag = Tag { issue_number, todo };
+                                issuer.fm.add_tag_to_file(file_id, tag);
+                            }
+                            Err(e) => eprintln!("[failed to parse JSON response: {e}]")
+                        }
                     }
                     Err(e) => eprintln!("[failed to parse JSON response: {e}]")
                 }
@@ -108,35 +95,37 @@ impl Api for GithubApi {
 
             Ok(r) if matches!{
                 r.status(),
-                StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+                StatusCode::Forbidden | StatusCode::TooManyRequests
             } => eprintln!{
                 "[presumably rate limit hit: HTTP {status}]",
                 status = r.status()
             },
 
-            Ok(r) => eprintln!{
-                "[failed to create issue ({s}): {t}]",
-                s = r.status(),
-                t = r.text().await.unwrap_or_default()
+            Ok(mut r) => {
+                let text = r.body_string().await.unwrap_or_default();
+                eprintln!{
+                    "[failed to create issue ({s}): {t}]",
+                    s = r.status(),
+                    t = text
+                }
             },
 
-            Err(e) => {
-                eprintln!("[network error creating issue: {e}]");
-                let mut src = e.source();
-                while let Some(s) = src {
-                    eprintln!("  caused by: {s}");
-                    src = s.source();
-                }
-            }
+            Err(e) => eprintln!("[network error creating issue: {e}]")
         }
     }
 
     async fn check_if_issue_is_closed(&self, issuer: &Issuer, issue: &Issue) -> bool {
         let url = issuer.config.api.get_issue_api_url(&issuer.config, issue);
 
-        match issuer.rq_client.get(&url).send().await {
-            Ok(r) if r.status().is_success() => {
-                let Ok(json) = r.json::<Value>().await else {
+        let request = issuer.rq_client
+            .get(&url)
+            .header("Authorization", format!("token {}", issuer.config.token()))
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("User-Agent", "stalkr-todo-bot");
+
+        match request.send().await {
+            Ok(mut r) if r.status().is_success() => {
+                let Ok(json) = r.body_json::<Value>().await else {
                     return false
                 };
 
@@ -156,7 +145,7 @@ impl Api for GithubApi {
 
             Ok(r) if matches!{
                 r.status(),
-                StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+                StatusCode::Forbidden | StatusCode::TooManyRequests
             } => {
                 // TODO(#27): A mechanism to stop execution
                 eprintln!{
