@@ -1,5 +1,4 @@
 // TODO(#32): Implement closing mode
-// TODO(#37): Allow user to scroll todo's
 
 use stalkr::cli::Cli;
 use stalkr::mode::Mode;
