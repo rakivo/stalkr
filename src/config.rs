@@ -4,7 +4,6 @@ use crate::api::Api;
 use crate::mode::Mode;
 use crate::git::GitLocker;
 
-use std::fs;
 use std::sync::Arc;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -52,7 +51,7 @@ impl Config {
         ) {
             (owner.to_owned(), repo.to_owned())
         } else {
-            match Self::get_git_origin_url(
+            match util::get_git_origin_url(
                 cli.directory.clone(),
                 remote
             ).as_deref().and_then(util::parse_owner_repo) {
@@ -94,37 +93,5 @@ impl Config {
     #[inline(always)]
     pub fn token(&self) -> &str {
         self.token.as_ref().unwrap()
-    }
-
-    #[must_use]
-    pub fn get_git_origin_url(mut dir: PathBuf, remote: &str) -> Option<String> {
-        loop {
-            let config = dir.join(".git/config");
-
-            if config.exists() {
-                let contents = fs::read_to_string(config).ok()?;
-
-                let mut in_origin = false;
-                for line in contents.lines() {
-                    let line = line.trim();
-                    if line.starts_with("[remote \"") {
-                        in_origin = line.contains(&format!{
-                            "\"{remote}\""
-                        });
-                    } else if in_origin && line.starts_with("url") {
-                        return line.split('=')
-                            .nth(1)
-                            .map(|s| s.trim().to_owned())
-                    }
-                }
-
-                break
-            }
-
-            // go up
-            if !dir.pop() { break }
-        }
-
-        None
     }
 }

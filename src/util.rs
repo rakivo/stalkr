@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::borrow::Cow;
-use std::{mem, slice, str};
+use std::{fs, mem, slice, str};
 use std::io::{self, Write};
 
 #[inline]
@@ -138,6 +138,125 @@ pub fn parse_owner_repo(url: &str) -> Option<(String, String)> {
     }
 
     Some((owner, repo))
+}
+
+#[must_use]
+pub fn get_git_origin_url(mut dir: PathBuf, remote: &str) -> Option<String> {
+    loop {
+        let config = dir.join(".git/config");
+        if config.exists() {
+            let contents = fs::read_to_string(&config).ok()?;
+
+            // First, try to find the requested remote
+            if let Some(url) = find_remote_url(&contents, remote) {
+                return Some(url);
+            }
+
+            // Fallback 1: Try pushDefault
+            if let Some(push_default) = find_push_default(&contents) {
+                eprintln!("[falling back to pushDefault]: {push_default}");
+                if let Some(url) = find_remote_url(&contents, &push_default) {
+                    return Some(url);
+                }
+            }
+
+            // Fallback 2: Try current branch's remote
+            if let Some(branch_remote) = find_current_branch_remote(&dir, &contents) {
+                println!("[falling back to branch remote]: {branch_remote}");
+                if let Some(url) = find_remote_url(&contents, &branch_remote) {
+                    return Some(url);
+                }
+            }
+
+            // Fallback 3: Use any available remote
+            if let Some(url) = find_any_remote_url(&contents) {
+                println!("[falling back to first available remote]");
+                return Some(url);
+            }
+
+            break;
+        }
+
+        // go up
+        if !dir.pop() { break }
+    }
+    None
+}
+
+#[must_use]
+fn find_remote_url(contents: &str, remote: &str) -> Option<String> {
+    let mut in_target_remote = false;
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with("[remote \"") {
+            in_target_remote = line.contains(&format!("\"{remote}\""));
+        } else if in_target_remote && line.starts_with("url") {
+            return line.split('=')
+                .nth(1)
+                .map(|s| s.trim().to_owned());
+        }
+    }
+    None
+}
+
+#[must_use]
+fn find_push_default(contents: &str) -> Option<String> {
+    let mut in_remote_section = false;
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with("[remote]") {
+            in_remote_section = true;
+        } else if line.starts_with('[') {
+            in_remote_section = false;
+        } else if in_remote_section && line.starts_with("pushDefault") {
+            return line.split('=')
+                .nth(1)
+                .map(|s| s.trim().to_owned());
+        }
+    }
+    None
+}
+
+#[must_use]
+fn find_current_branch_remote(dir: &Path, contents: &str) -> Option<String> {
+    // Read current branch from HEAD
+    let head = dir.join(".git/HEAD");
+    let head_contents = fs::read_to_string(head).ok()?;
+    let branch_name = head_contents
+        .strip_prefix("ref: refs/heads/")?
+        .trim();
+
+    // Find remote for this branch in config
+    let mut in_branch_section = false;
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with(&format!("[branch \"{branch_name}\"]")) {
+            in_branch_section = true;
+        } else if line.starts_with('[') {
+            in_branch_section = false;
+        } else if in_branch_section && line.starts_with("remote") {
+            return line.split('=')
+                .nth(1)
+                .map(|s| s.trim().to_owned());
+        }
+    }
+    None
+}
+
+#[must_use]
+fn find_any_remote_url(contents: &str) -> Option<String> {
+    let mut in_remote = false;
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with("[remote \"") {
+            in_remote = true;
+        } else if in_remote && line.starts_with("url") {
+            return line.split('=')
+                .nth(1)
+                .map(|s| s.trim().to_owned());
+        }
+    }
+    None
 }
 
 #[must_use]

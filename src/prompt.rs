@@ -61,7 +61,7 @@ pub struct Prompter {
 }
 
 impl Prompter {
-    const ALL_KEY  : &str = "a";
+    const  ALL_KEY : &str = "a";
     const SKIP_KEY : &str = "s";
     const HELP_KEY : &str = "h";
 
