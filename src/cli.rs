@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 #[clap(
     name = "stalkr",
     about = "stalkr: multi-threaded TODO reporter",
-    version = "0.1.1",
+    version = "0.1.2",
     override_usage = "stalkr [SUBCOMMAND] [OPTIONS]"
 )]
 pub struct Cli {
